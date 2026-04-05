@@ -1,249 +1,361 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
-import styles from './ClientForm.module.css';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+
+const overlayStyle = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(15, 23, 42, 0.45)',
+  backdropFilter: 'blur(2px)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 999,
+  padding: '24px',
+};
+
+const modalStyle = {
+  width: '100%',
+  maxWidth: '760px',
+  background: '#ffffff',
+  borderRadius: '20px',
+  boxShadow: '0 25px 60px rgba(15, 23, 42, 0.22)',
+  overflow: 'hidden',
+};
+
+const headerStyle = {
+  padding: '22px 24px 16px',
+  borderBottom: '1px solid #e2e8f0',
+  background: 'linear-gradient(180deg, #f8fafc 0%, #ffffff 100%)',
+};
+
+const bodyStyle = {
+  padding: '24px',
+};
+
+const gridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: '16px',
+};
+
+const fieldStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '8px',
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: '12px',
+  border: '1px solid #cbd5e1',
+  outline: 'none',
+  fontSize: '14px',
+  background: '#fff',
+};
+
+const footerStyle = {
+  padding: '18px 24px 24px',
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: '12px',
+};
+
+const secondaryButtonStyle = {
+  border: '1px solid #cbd5e1',
+  background: '#ffffff',
+  color: '#334155',
+  borderRadius: '12px',
+  padding: '11px 16px',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const primaryButtonStyle = {
+  border: 'none',
+  background: '#2563eb',
+  color: '#ffffff',
+  borderRadius: '12px',
+  padding: '11px 16px',
+  fontWeight: 700,
+  cursor: 'pointer',
+};
+
+const TYPE_OPTIONS = [
+  { value: 'FORNECEDOR', label: 'Produtor / Fornecedor' },
+  { value: 'INDUSTRIA', label: 'Comprador / Indústria' },
+];
 
 const formatCPF = (value) => {
-    let v = String(value || '').replace(/\D/g, '').slice(0, 11);
-    v = v.replace(/(\d{3})(\d)/, '$1.$2');
-    v = v.replace(/(\d{3})(\d)/, '$1.$2');
-    v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-    return v;
+  let v = String(value || '').replace(/\D/g, '').slice(0, 11);
+  v = v.replace(/(\d{3})(\d)/, '$1.$2');
+  v = v.replace(/(\d{3})(\d)/, '$1.$2');
+  v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  return v;
 };
 
 const formatPhone = (value) => {
-    let v = String(value || '').replace(/\D/g, '').slice(0, 11);
+  let v = String(value || '').replace(/\D/g, '').slice(0, 11);
 
-    if (v.length <= 10) {
-        v = v.replace(/^(\d{2})(\d)/, '($1) $2');
-        v = v.replace(/(\d{4})(\d)/, '$1-$2');
-        return v;
-    }
-
+  if (v.length <= 10) {
     v = v.replace(/^(\d{2})(\d)/, '($1) $2');
-    v = v.replace(/(\d{5})(\d)/, '$1-$2');
+    v = v.replace(/(\d{4})(\d)/, '$1-$2');
     return v;
+  }
+
+  v = v.replace(/^(\d{2})(\d)/, '($1) $2');
+  v = v.replace(/(\d{5})(\d)/, '$1-$2');
+  return v;
 };
 
 const normalizeInterest = (value) => {
-    if (value == null) return '';
+  if (value == null) return '';
 
-    let v = String(value)
-        .replace(',', '.')
-        .replace(/[^\d.]/g, '');
+  let v = String(value).replace(',', '.').replace(/[^\d.]/g, '');
+  const firstDot = v.indexOf('.');
 
-    const firstDot = v.indexOf('.');
-    if (firstDot !== -1) {
-        v =
-            v.slice(0, firstDot + 1) +
-            v.slice(firstDot + 1).replace(/\./g, '');
-    }
+  if (firstDot !== -1) {
+    v = v.slice(0, firstDot + 1) + v.slice(firstDot + 1).replace(/\./g, '');
+  }
 
-    const [intPart = '', decPart = ''] = v.split('.');
-    return decPart ? `${intPart}.${decPart.slice(0, 2)}` : intPart;
+  const [intPart = '', decPart = ''] = v.split('.');
+  return decPart ? `${intPart}.${decPart.slice(0, 2)}` : intPart;
 };
 
-const getInitialState = () => ({
-    id: null,
-    nome: '',
-    cpf: '',
-    telefone: '',
-    endereco: '',
-    taxa_juros: '0',
-    perfil_risco: 'Normal',
+const normalizeTipoCadastro = (value) => {
+  const text = String(value || '').trim().toLowerCase();
+
+  if (
+    text.includes('industria') ||
+    text.includes('indústria') ||
+    text.includes('comprador') ||
+    text.includes('compradora') ||
+    text.includes('fabrica') ||
+    text.includes('fábrica')
+  ) {
+    return 'INDUSTRIA';
+  }
+
+  return 'FORNECEDOR';
+};
+
+const getInitialState = (defaultType = 'FORNECEDOR') => ({
+  id: null,
+  nome: '',
+  cpf: '',
+  telefone: '',
+  endereco: '',
+  taxa_juros: '0',
+  perfil_risco: 'Normal',
+  tipo_cadastro: normalizeTipoCadastro(defaultType),
 });
 
-const ClientForm = ({ onClose, onSave, clientToEdit }) => {
-    const [clientData, setClientData] = useState(getInitialState);
+const ClientForm = ({ onClose, onSave, clientToEdit, defaultType = 'FORNECEDOR' }) => {
+  const [clientData, setClientData] = useState(getInitialState(defaultType));
 
-    useEffect(() => {
-        if (clientToEdit) {
-            setClientData({
-                id: clientToEdit.id || clientToEdit._id || null,
-                nome: clientToEdit.nome || '',
-                cpf: clientToEdit.cpf || '',
-                telefone: clientToEdit.telefone || '',
-                endereco: clientToEdit.endereco || '',
-                taxa_juros: String(clientToEdit.taxa_juros ?? '0'),
-                perfil_risco: clientToEdit.perfil_risco || 'Normal',
-            });
-        } else {
-            setClientData(getInitialState());
-        }
-    }, [clientToEdit]);
+  useEffect(() => {
+    if (clientToEdit) {
+      setClientData({
+        id: clientToEdit.id || clientToEdit._id || null,
+        nome: clientToEdit.nome || '',
+        cpf: clientToEdit.cpf || '',
+        telefone: clientToEdit.telefone || '',
+        endereco: clientToEdit.endereco || '',
+        taxa_juros: String(clientToEdit.taxa_juros ?? '0'),
+        perfil_risco: clientToEdit.perfil_risco || 'Normal',
+        tipo_cadastro: normalizeTipoCadastro(
+          clientToEdit.tipo_cadastro || clientToEdit.categoria || clientToEdit.tipo
+        ),
+      });
+    } else {
+      setClientData(getInitialState(defaultType));
+    }
+  }, [clientToEdit, defaultType]);
 
-    const handleChange = useCallback((e) => {
-        const { name, value } = e.target;
+  const title = useMemo(() => {
+    return clientData.id ? 'Editar Cadastro' : 'Novo Cadastro';
+  }, [clientData.id]);
 
-        setClientData((prev) => {
-            if (name === 'taxa_juros') {
-                return {
-                    ...prev,
-                    [name]: normalizeInterest(value),
-                };
-            }
+  const handleChange = useCallback((e) => {
+    const { name, value } = e.target;
 
-            return {
-                ...prev,
-                [name]: value,
-            };
-        });
-    }, []);
+    setClientData((prev) => {
+      if (name === 'taxa_juros') {
+        return {
+          ...prev,
+          [name]: normalizeInterest(value),
+        };
+      }
 
-    const handleBlur = useCallback((e) => {
-        const { name, value } = e.target;
+      if (name === 'tipo_cadastro') {
+        return {
+          ...prev,
+          [name]: normalizeTipoCadastro(value),
+        };
+      }
 
-        setClientData((prev) => {
-            if (name === 'cpf') {
-                return { ...prev, cpf: formatCPF(value) };
-            }
+      return {
+        ...prev,
+        [name]: value,
+      };
+    });
+  }, []);
 
-            if (name === 'telefone') {
-                return { ...prev, telefone: formatPhone(value) };
-            }
+  const handleBlur = useCallback((e) => {
+    const { name, value } = e.target;
 
-            if (name === 'taxa_juros') {
-                return { ...prev, taxa_juros: normalizeInterest(value) || '0' };
-            }
+    setClientData((prev) => {
+      if (name === 'cpf') {
+        return { ...prev, cpf: formatCPF(value) };
+      }
 
-            return prev;
-        });
-    }, []);
+      if (name === 'telefone') {
+        return { ...prev, telefone: formatPhone(value) };
+      }
 
-    const handleSubmit = useCallback((e) => {
-        e.preventDefault();
+      if (name === 'taxa_juros') {
+        return { ...prev, taxa_juros: normalizeInterest(value) || '0' };
+      }
 
-        const nome = String(clientData.nome || '').trim();
-        if (!nome) {
-            alert('O Nome é obrigatório.');
-            return;
-        }
+      return prev;
+    });
+  }, []);
 
-        onSave({
-            ...clientData,
-            nome,
-            cpf: formatCPF(clientData.cpf),
-            telefone: formatPhone(clientData.telefone),
-            taxa_juros: parseFloat(normalizeInterest(clientData.taxa_juros) || '0'),
-        });
-    }, [clientData, onSave]);
+  const handleSubmit = useCallback(
+    (e) => {
+      e.preventDefault();
 
-    return (
-        <div className={styles.modalBackdrop}>
-            <div className={styles.modalContent}>
-                <h3>{clientData.id ? 'Editar Produtor' : 'Novo Produtor'}</h3>
+      const nome = String(clientData.nome || '').trim();
 
-                <form onSubmit={handleSubmit}>
-                    <label>Nome Completo:</label>
-                    <input
-                        type="text"
-                        name="nome"
-                        value={clientData.nome}
-                        onChange={handleChange}
-                        required
-                        autoFocus
-                        autoComplete="off"
-                        style={{ marginBottom: '10px', width: '100%', padding: '8px' }}
-                    />
+      if (!nome) {
+        alert('O nome é obrigatório.');
+        return;
+      }
 
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                        <div style={{ flex: 1 }}>
-                            <label>CPF:</label>
-                            <input
-                                type="text"
-                                name="cpf"
-                                value={clientData.cpf}
-                                onChange={handleChange}
-                                onBlur={handleBlur}
-                                maxLength={14}
-                                inputMode="numeric"
-                                placeholder="000.000.000-00"
-                                autoComplete="off"
-                                style={{ width: '100%', padding: '8px' }}
-                            />
-                        </div>
+      onSave({
+        ...clientData,
+        nome,
+        cpf: formatCPF(clientData.cpf),
+        telefone: formatPhone(clientData.telefone),
+        taxa_juros: parseFloat(normalizeInterest(clientData.taxa_juros) || '0'),
+        tipo_cadastro: normalizeTipoCadastro(clientData.tipo_cadastro),
+      });
+    },
+    [clientData, onSave]
+  );
 
-                        <div style={{ flex: 1 }}>
-                            <label>Telefone:</label>
-                            <input
-                                type="text"
-                                name="telefone"
-                                value={clientData.telefone}
-                                onChange={handleChange}
-                                onBlur={handleBlur}
-                                maxLength={15}
-                                inputMode="tel"
-                                placeholder="(00) 00000-0000"
-                                autoComplete="off"
-                                style={{ width: '100%', padding: '8px' }}
-                            />
-                        </div>
-                    </div>
-
-                    <label>Endereço:</label>
-                    <input
-                        type="text"
-                        name="endereco"
-                        value={clientData.endereco}
-                        onChange={handleChange}
-                        autoComplete="off"
-                        style={{ marginBottom: '15px', width: '100%', padding: '8px' }}
-                    />
-
-                    <div
-                        style={{
-                            borderTop: '1px solid #ccc',
-                            paddingTop: '10px',
-                            marginTop: '10px',
-                            marginBottom: '20px',
-                        }}
-                    >
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                            <div style={{ flex: 1 }}>
-                                <label>Taxa de Juros (% a.m.):</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    name="taxa_juros"
-                                    value={clientData.taxa_juros}
-                                    onChange={handleChange}
-                                    onBlur={handleBlur}
-                                    placeholder="0.00"
-                                    autoComplete="off"
-                                    style={{ width: '100%', padding: '8px' }}
-                                />
-                            </div>
-
-                            <div style={{ flex: 1 }}>
-                                <label>Perfil de Risco:</label>
-                                <select
-                                    name="perfil_risco"
-                                    value={clientData.perfil_risco}
-                                    onChange={handleChange}
-                                    style={{ width: '100%', padding: '8px' }}
-                                >
-                                    <option value="Normal">Normal</option>
-                                    <option value="Baixo">Bom Pagador (Baixo)</option>
-                                    <option value="Alto">Arriscado (Alto)</option>
-                                    <option value="VIP">VIP</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div
-                        className={styles.actions}
-                        style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}
-                    >
-                        <button type="button" onClick={onClose} className={styles.cancelButton}>
-                            Cancelar
-                        </button>
-                        <button type="submit" className={styles.saveButton}>
-                            Salvar Dados
-                        </button>
-                    </div>
-                </form>
-            </div>
+  return (
+    <div style={overlayStyle} onMouseDown={onClose}>
+      <div style={modalStyle} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={headerStyle}>
+          <h3 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>{title}</h3>
+          <p style={{ margin: '8px 0 0', color: '#64748b' }}>
+            Cadastre produtores, fornecedores e compradores no mesmo fluxo.
+          </p>
         </div>
-    );
+
+        <form onSubmit={handleSubmit}>
+          <div style={bodyStyle}>
+            <div style={gridStyle}>
+              <label style={fieldStyle}>
+                <span>Tipo de Cadastro</span>
+                <select
+                  name="tipo_cadastro"
+                  value={clientData.tipo_cadastro}
+                  onChange={handleChange}
+                  style={inputStyle}
+                >
+                  {TYPE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={fieldStyle}>
+                <span>Nome Completo</span>
+                <input
+                  name="nome"
+                  value={clientData.nome}
+                  onChange={handleChange}
+                  style={inputStyle}
+                  autoFocus
+                />
+              </label>
+
+              <label style={fieldStyle}>
+                <span>CPF</span>
+                <input
+                  name="cpf"
+                  value={clientData.cpf}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={fieldStyle}>
+                <span>Telefone</span>
+                <input
+                  name="telefone"
+                  value={clientData.telefone}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
+                <span>Endereço</span>
+                <input
+                  name="endereco"
+                  value={clientData.endereco}
+                  onChange={handleChange}
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={fieldStyle}>
+                <span>Taxa de Juros (% a.m.)</span>
+                <input
+                  name="taxa_juros"
+                  value={clientData.taxa_juros}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  style={inputStyle}
+                />
+              </label>
+
+              <label style={fieldStyle}>
+                <span>Perfil de Risco</span>
+                <select
+                  name="perfil_risco"
+                  value={clientData.perfil_risco}
+                  onChange={handleChange}
+                  style={inputStyle}
+                >
+                  <option value="Normal">Normal</option>
+                  <option value="Bom Pagador (Baixo)">Bom Pagador (Baixo)</option>
+                  <option value="Arriscado (Alto)">Arriscado (Alto)</option>
+                  <option value="VIP">VIP</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div style={footerStyle}>
+            <button type="button" onClick={onClose} style={secondaryButtonStyle}>
+              Cancelar
+            </button>
+
+            <button type="submit" style={primaryButtonStyle}>
+              Salvar Dados
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 };
 
 export default memo(ClientForm);

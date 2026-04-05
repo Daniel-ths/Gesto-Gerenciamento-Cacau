@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 
@@ -7,7 +7,8 @@ import ContaCorrente from './pages/ContaCorrente';
 import GeneralReport from './pages/GeneralReport';
 
 // --- ✅ URL CORRIGIDA (Aponta sempre para a versão atual) ---
-const LICENSE_URL = 'https://gist.githubusercontent.com/Daniel-ths/ace75c57234ce4981f00cb76b0054423/raw/status.json';
+const LICENSE_URL =
+  'https://gist.githubusercontent.com/Daniel-ths/ace75c57234ce4981f00cb76b0054423/raw/status.json';
 
 function App() {
   const [bloqueado, setBloqueado] = useState(false);
@@ -17,15 +18,11 @@ function App() {
   useEffect(() => {
     const verificarLicenca = async () => {
       try {
-        const urlSemCache = `${LICENSE_URL}?t=${new Date().getTime()}`;
-
-        console.log('Verificando:', urlSemCache);
-
+        const urlSemCache = `${LICENSE_URL}?t=${Date.now()}`;
         const response = await fetch(urlSemCache, { cache: 'no-store' });
 
         if (response.ok) {
           const data = await response.json();
-          console.log('Status recebido:', data.status);
 
           if (data.status === 'BLOQUEADO') {
             setBloqueado(true);
@@ -52,8 +49,7 @@ function App() {
           justifyContent: 'center',
           background: '#f3f4f6',
         }}
-      >
-      </div>
+      />
     );
   }
 
@@ -124,7 +120,9 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<ClientList />} />
+        <Route path="/" element={<ClientList screen="suppliers" />} />
+        <Route path="/cadastros" element={<ClientList screen="suppliers" />} />
+        <Route path="/compra-venda" element={<ClientList screen="trade" />} />
         <Route path="/conta-corrente/:id" element={<ContaCorrente />} />
         <Route path="/relatorio-geral" element={<GeneralReport />} />
       </Routes>
