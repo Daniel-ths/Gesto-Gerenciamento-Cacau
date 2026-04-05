@@ -1,161 +1,222 @@
-// frontend/src/components/ClientForm.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import styles from './ClientForm.module.css';
 
-// --- Funções Utilitárias de Formatação (Mantidas) ---
-
 const formatCPF = (value) => {
-    value = value.replace(/\D/g, ""); // Remove não dígitos
-    value = value.substring(0, 11);   // Limita tamanho
-    value = value.replace(/(\d{3})(\d)/, "$1.$2");
-    value = value.replace(/(\d{3})(\d)/, "$1.$2");
-    value = value.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
-    return value;
+    let v = String(value || '').replace(/\D/g, '').slice(0, 11);
+    v = v.replace(/(\d{3})(\d)/, '$1.$2');
+    v = v.replace(/(\d{3})(\d)/, '$1.$2');
+    v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+    return v;
 };
 
 const formatPhone = (value) => {
-    value = value.replace(/\D/g, "");
-    value = value.substring(0, 11);
-    value = value.replace(/^(\d{2})(\d)/g, "($1) $2");
-    value = value.replace(/(\d{5})(\d)/, "$1-$2");
-    return value;
+    let v = String(value || '').replace(/\D/g, '').slice(0, 11);
+
+    if (v.length <= 10) {
+        v = v.replace(/^(\d{2})(\d)/, '($1) $2');
+        v = v.replace(/(\d{4})(\d)/, '$1-$2');
+        return v;
+    }
+
+    v = v.replace(/^(\d{2})(\d)/, '($1) $2');
+    v = v.replace(/(\d{5})(\d)/, '$1-$2');
+    return v;
 };
 
-const ClientForm = ({ onClose, onSave, clientToEdit }) => {
-    
-    const [clientData, setClientData] = useState({
-        id: null,
-        nome: '',
-        cpf: '',
-        telefone: '',
-        endereco: '',
-        // NOVOS CAMPOS:
-        taxa_juros: '0',
-        perfil_risco: 'Normal'
-    });
+const normalizeInterest = (value) => {
+    if (value == null) return '';
 
-    // Carrega os dados se for Edição
+    let v = String(value)
+        .replace(',', '.')
+        .replace(/[^\d.]/g, '');
+
+    const firstDot = v.indexOf('.');
+    if (firstDot !== -1) {
+        v =
+            v.slice(0, firstDot + 1) +
+            v.slice(firstDot + 1).replace(/\./g, '');
+    }
+
+    const [intPart = '', decPart = ''] = v.split('.');
+    return decPart ? `${intPart}.${decPart.slice(0, 2)}` : intPart;
+};
+
+const getInitialState = () => ({
+    id: null,
+    nome: '',
+    cpf: '',
+    telefone: '',
+    endereco: '',
+    taxa_juros: '0',
+    perfil_risco: 'Normal',
+});
+
+const ClientForm = ({ onClose, onSave, clientToEdit }) => {
+    const [clientData, setClientData] = useState(getInitialState);
+
     useEffect(() => {
         if (clientToEdit) {
             setClientData({
-                id: clientToEdit.id || clientToEdit._id, // Garante pegar o ID corretamente
+                id: clientToEdit.id || clientToEdit._id || null,
                 nome: clientToEdit.nome || '',
                 cpf: clientToEdit.cpf || '',
                 telefone: clientToEdit.telefone || '',
                 endereco: clientToEdit.endereco || '',
-                // Mapeia os novos campos (ou usa padrão se não existir)
-                taxa_juros: clientToEdit.taxa_juros || '0',
-                perfil_risco: clientToEdit.perfil_risco || 'Normal'
+                taxa_juros: String(clientToEdit.taxa_juros ?? '0'),
+                perfil_risco: clientToEdit.perfil_risco || 'Normal',
             });
+        } else {
+            setClientData(getInitialState());
         }
     }, [clientToEdit]);
 
-    const handleChange = (e) => {
+    const handleChange = useCallback((e) => {
         const { name, value } = e.target;
-        let newValue = value;
 
-        // Aplica máscaras automaticamente
-        if (name === 'cpf') newValue = formatCPF(value);
-        if (name === 'telefone') newValue = formatPhone(value);
+        setClientData((prev) => {
+            if (name === 'taxa_juros') {
+                return {
+                    ...prev,
+                    [name]: normalizeInterest(value),
+                };
+            }
 
-        setClientData(prev => ({ ...prev, [name]: newValue }));
-    };
+            return {
+                ...prev,
+                [name]: value,
+            };
+        });
+    }, []);
 
-    const handleSubmit = (e) => {
+    const handleBlur = useCallback((e) => {
+        const { name, value } = e.target;
+
+        setClientData((prev) => {
+            if (name === 'cpf') {
+                return { ...prev, cpf: formatCPF(value) };
+            }
+
+            if (name === 'telefone') {
+                return { ...prev, telefone: formatPhone(value) };
+            }
+
+            if (name === 'taxa_juros') {
+                return { ...prev, taxa_juros: normalizeInterest(value) || '0' };
+            }
+
+            return prev;
+        });
+    }, []);
+
+    const handleSubmit = useCallback((e) => {
         e.preventDefault();
-        
-        // Validação simples
-        if (!clientData.nome) {
+
+        const nome = String(clientData.nome || '').trim();
+        if (!nome) {
             alert('O Nome é obrigatório.');
             return;
         }
-        
-        // Envia para o componente Pai
-        // Importante: Convertemos a taxa para número para garantir cálculos corretos no futuro
+
         onSave({
             ...clientData,
-            taxa_juros: parseFloat(clientData.taxa_juros || 0)
+            nome,
+            cpf: formatCPF(clientData.cpf),
+            telefone: formatPhone(clientData.telefone),
+            taxa_juros: parseFloat(normalizeInterest(clientData.taxa_juros) || '0'),
         });
-    };
+    }, [clientData, onSave]);
 
     return (
         <div className={styles.modalBackdrop}>
             <div className={styles.modalContent}>
                 <h3>{clientData.id ? 'Editar Produtor' : 'Novo Produtor'}</h3>
-                
+
                 <form onSubmit={handleSubmit}>
-                    
-                    {/* Nome */}
                     <label>Nome Completo:</label>
-                    <input 
-                        type="text" 
-                        name="nome" 
-                        value={clientData.nome} 
-                        onChange={handleChange} 
-                        required 
+                    <input
+                        type="text"
+                        name="nome"
+                        value={clientData.nome}
+                        onChange={handleChange}
+                        required
                         autoFocus
+                        autoComplete="off"
                         style={{ marginBottom: '10px', width: '100%', padding: '8px' }}
                     />
-                    
+
                     <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                         <div style={{ flex: 1 }}>
                             <label>CPF:</label>
-                            <input 
-                                type="text" 
-                                name="cpf" 
-                                value={clientData.cpf} 
-                                onChange={handleChange} 
-                                maxLength="14"
+                            <input
+                                type="text"
+                                name="cpf"
+                                value={clientData.cpf}
+                                onChange={handleChange}
+                                onBlur={handleBlur}
+                                maxLength={14}
+                                inputMode="numeric"
                                 placeholder="000.000.000-00"
+                                autoComplete="off"
                                 style={{ width: '100%', padding: '8px' }}
                             />
                         </div>
+
                         <div style={{ flex: 1 }}>
                             <label>Telefone:</label>
-                            <input 
-                                type="text" 
-                                name="telefone" 
-                                value={clientData.telefone} 
-                                onChange={handleChange} 
-                                maxLength="15"
+                            <input
+                                type="text"
+                                name="telefone"
+                                value={clientData.telefone}
+                                onChange={handleChange}
+                                onBlur={handleBlur}
+                                maxLength={15}
+                                inputMode="tel"
                                 placeholder="(00) 00000-0000"
+                                autoComplete="off"
                                 style={{ width: '100%', padding: '8px' }}
                             />
                         </div>
                     </div>
 
-                    {/* Endereço */}
                     <label>Endereço:</label>
-                    <input 
-                        type="text" 
-                        name="endereco" 
-                        value={clientData.endereco} 
-                        onChange={handleChange} 
+                    <input
+                        type="text"
+                        name="endereco"
+                        value={clientData.endereco}
+                        onChange={handleChange}
+                        autoComplete="off"
                         style={{ marginBottom: '15px', width: '100%', padding: '8px' }}
                     />
 
-                    {/* --- ÁREA FINANCEIRA (NOVA) --- */}
-                    <div style={{ borderTop: '1px solid #ccc', paddingTop: '10px', marginTop: '10px', marginBottom: '20px' }}>
-                        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#555' }}>Dados Financeiros</h4>
-                        
+                    <div
+                        style={{
+                            borderTop: '1px solid #ccc',
+                            paddingTop: '10px',
+                            marginTop: '10px',
+                            marginBottom: '20px',
+                        }}
+                    >
                         <div style={{ display: 'flex', gap: '10px' }}>
                             <div style={{ flex: 1 }}>
                                 <label>Taxa de Juros (% a.m.):</label>
-                                <input 
-                                    type="number" 
-                                    step="0.01" 
-                                    name="taxa_juros" 
-                                    value={clientData.taxa_juros} 
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    name="taxa_juros"
+                                    value={clientData.taxa_juros}
                                     onChange={handleChange}
+                                    onBlur={handleBlur}
                                     placeholder="0.00"
+                                    autoComplete="off"
                                     style={{ width: '100%', padding: '8px' }}
                                 />
                             </div>
+
                             <div style={{ flex: 1 }}>
                                 <label>Perfil de Risco:</label>
-                                <select 
-                                    name="perfil_risco" 
-                                    value={clientData.perfil_risco} 
+                                <select
+                                    name="perfil_risco"
+                                    value={clientData.perfil_risco}
                                     onChange={handleChange}
                                     style={{ width: '100%', padding: '8px' }}
                                 >
@@ -167,10 +228,12 @@ const ClientForm = ({ onClose, onSave, clientToEdit }) => {
                             </div>
                         </div>
                     </div>
-                    {/* ----------------------------- */}
 
-                    <div className={styles.actions} style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                         <button type="button" onClick={onClose} className={styles.cancelButton}>
+                    <div
+                        className={styles.actions}
+                        style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}
+                    >
+                        <button type="button" onClick={onClose} className={styles.cancelButton}>
                             Cancelar
                         </button>
                         <button type="submit" className={styles.saveButton}>
@@ -183,4 +246,4 @@ const ClientForm = ({ onClose, onSave, clientToEdit }) => {
     );
 };
 
-export default ClientForm;
+export default memo(ClientForm);

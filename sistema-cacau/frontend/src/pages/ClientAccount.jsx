@@ -1,210 +1,545 @@
-// frontend/src/pages/ClientAccount.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+    ArrowLeft,
+    Plus,
+    Filter,
+    RefreshCw,
+    AlertTriangle,
+    Trash2,
+} from 'lucide-react';
 import Layout from '../components/Layout';
-import TransactionForm from '../components/TransactionForm'; 
-import { formatCurrency } from '../utils/formatters';
-import styles from './ClientList.module.css';
+import TransactionModal from '../components/TransactionModal';
+import { formatCurrency, formatDate } from '../utils/formatters';
+import { api } from '../api';
+import styles from './ContaCorrente.module.css';
+
+const safeNumber = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const formatKg = (value) => {
+    return safeNumber(value).toLocaleString('pt-BR', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    });
+};
+
+const TYPE_META = {
+    ADIANTAMENTO: {
+        label: 'Adiantamento',
+        badge: 'DÉBITO',
+        tone: 'debito',
+    },
+    DEPOSITO: {
+        label: 'Depósito',
+        badge: 'ESTOQUE',
+        tone: 'neutro',
+    },
+    VENDA_NOVO: {
+        label: 'Venda de Cacau Novo',
+        badge: 'VENDA',
+        tone: 'neutro',
+    },
+    VENDA_DEPOSITO: {
+        label: 'Venda de Depósito',
+        badge: 'SAÍDA ESTOQUE',
+        tone: 'neutro',
+    },
+};
 
 const ClientAccount = () => {
-    // Pega o ID do cliente da URL
-    const { clientId } = useParams(); 
+    const { clientId } = useParams();
     const navigate = useNavigate();
 
-    const [clientData, setClientData] = useState(null);
+    const isIdInvalid = !clientId || clientId === 'undefined' || clientId === 'null';
+
+    const [accountData, setAccountData] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [showTransactionForm, setShowTransactionForm] = useState(false); 
-    
-    // Estado para armazenar as datas do filtro
-    const [filterDates, setFilterDates] = useState({ startDate: '', endDate: '' });
+    const [error, setError] = useState('');
+    const [showTransactionForm, setShowTransactionForm] = useState(false);
 
-    // Função para formatar o saldo e definir a classe CSS
-    const formatBalance = (balance) => {
-        const value = parseFloat(balance);
-        const sign = value < 0 ? 'D' : 'C'; // D=Devedor, C=Credor
-        // Usa formatCurrency para o valor absoluto formatado
-        const absoluteValueDisplay = formatCurrency(Math.abs(value)); 
-        const className = value < 0 ? styles.saldoDevedor : styles.saldoCredor;
-        
-        return {
-            display: absoluteValueDisplay, 
-            className: className, 
-            nature: sign
-        };
-    };
+    const [filterDates, setFilterDates] = useState({
+        startDate: '',
+        endDate: '',
+    });
 
-    // Função assíncrona para buscar os dados da conta corrente (Aceita objeto de filtro)
-    const fetchClientAccount = async (filter = filterDates) => {
+    const buildQueryString = useCallback((filter) => {
+        const params = new URLSearchParams();
+
+        if (filter.startDate) params.set('startDate', filter.startDate);
+        if (filter.endDate) params.set('endDate', filter.endDate);
+        params.set('t', String(Date.now()));
+
+        return `?${params.toString()}`;
+    }, []);
+
+    const fetchClientAccount = useCallback(async (filter = filterDates) => {
+        if (isIdInvalid) return;
+
         setLoading(true);
-        setError(null);
-        
+        setError('');
+
         try {
-            // 1. Constrói a URL com os parâmetros de data, se existirem
-            let url = `http://localhost:3000/conta-corrente/${clientId}`;
-            const params = [];
-            
-            if (filter.startDate) params.push(`startDate=${filter.startDate}`);
-            if (filter.endDate) params.push(`endDate=${filter.endDate}`);
-            
-            if (params.length > 0) {
-                url += `?${params.join('&')}`;
-            }
-            
-            // 2. Faz a requisição
-            const response = await fetch(url);
-            
+            const response = await api.get(
+                `/conta-corrente/${clientId}${buildQueryString(filter)}`
+            );
+
             if (!response.ok) {
-                const errorData = await response.json(); 
-                throw new Error(errorData.message || 'Cliente não encontrado ou erro no servidor.');
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                    errorData.message || 'Cliente não encontrado ou erro no servidor.'
+                );
             }
-            
+
             const data = await response.json();
-            setClientData(data);
+            setAccountData(data);
         } catch (err) {
-            setError(err.message);
+            console.error('Erro ao buscar conta corrente:', err);
+            setError(err.message || 'Erro ao carregar conta corrente.');
         } finally {
             setLoading(false);
         }
-    };
+    }, [clientId, filterDates, buildQueryString, isIdInvalid]);
 
-    // Dispara a busca inicial (sem filtro)
     useEffect(() => {
-        if (clientId) {
-            fetchClientAccount();
+        if (clientId && !isIdInvalid) {
+            fetchClientAccount(filterDates);
+        } else {
+            setLoading(false);
         }
-    }, [clientId]); 
-    
-    // Handler para capturar as mudanças no formulário de filtro
-    const handleFilterChange = (e) => {
+    }, [clientId, isIdInvalid, fetchClientAccount, filterDates]);
+
+    const handleFilterChange = useCallback((e) => {
         const { name, value } = e.target;
-        setFilterDates(prev => ({ ...prev, [name]: value }));
-    };
+        setFilterDates((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
+    }, []);
 
-    // Handler para submeter o filtro e refazer a busca
-    const handleFilterSubmit = (e) => {
+    const handleFilterSubmit = useCallback((e) => {
         e.preventDefault();
-        fetchClientAccount(filterDates); 
+        fetchClientAccount(filterDates);
+    }, [fetchClientAccount, filterDates]);
+
+    const handleClearFilters = useCallback(() => {
+        const empty = { startDate: '', endDate: '' };
+        setFilterDates(empty);
+        fetchClientAccount(empty);
+    }, [fetchClientAccount]);
+
+    const handleDeleteTransaction = useCallback(async (transacao) => {
+        const descricao = TYPE_META[transacao.tipo]?.label || transacao.tipo || 'transação';
+
+        if (!window.confirm(`Tem certeza que deseja excluir "${descricao}"?`)) return;
+
+        try {
+            const response = await api.delete(`/transacoes/${transacao.id}`);
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Erro ao excluir transação.');
+            }
+
+            await fetchClientAccount(filterDates);
+        } catch (err) {
+            alert(err.message || 'Erro ao excluir.');
+        }
+    }, [fetchClientAccount, filterDates]);
+
+    const formatBalance = useCallback((balance) => {
+        const value = safeNumber(balance);
+
+        return {
+            display: formatCurrency(Math.abs(value)),
+            className: value < 0 ? styles.saldoDevedor : styles.saldoCredor,
+            nature: value < 0 ? 'D (Deve)' : '(Crédito)',
+        };
+    }, []);
+
+    const resumoExtrato = useMemo(() => {
+        const extrato = accountData?.extrato || [];
+
+        return extrato.reduce(
+            (acc, transacao) => {
+                const tipo = transacao.tipo;
+                const peso = safeNumber(transacao.peso_kg);
+                const valorVisual = safeNumber(
+                    transacao.valor_visual ?? transacao.valor_total
+                );
+
+                if (tipo === 'ADIANTAMENTO') {
+                    acc.totalAdiantamentos += Math.abs(valorVisual);
+                }
+
+                if (tipo === 'VENDA_NOVO') {
+                    acc.totalVendaNovo += valorVisual;
+                }
+
+                if (tipo === 'VENDA_DEPOSITO') {
+                    acc.totalVendaDeposito += valorVisual;
+                    acc.totalSaidaDepositoKg += peso;
+                }
+
+                if (tipo === 'DEPOSITO') {
+                    acc.totalEntradaDepositoKg += peso;
+                }
+
+                return acc;
+            },
+            {
+                totalAdiantamentos: 0,
+                totalVendaNovo: 0,
+                totalVendaDeposito: 0,
+                totalEntradaDepositoKg: 0,
+                totalSaidaDepositoKg: 0,
+            }
+        );
+    }, [accountData]);
+
+    const renderTransactionType = (transacao) => {
+        const meta = TYPE_META[transacao.tipo] || {
+            label: transacao.tipo || '-',
+            badge: '',
+            tone: 'neutro',
+        };
+
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span>{meta.label}</span>
+                {meta.badge && (
+                    <span
+                        style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '3px 6px',
+                            borderRadius: '999px',
+                            background:
+                                meta.tone === 'debito'
+                                    ? '#fee2e2'
+                                    : meta.tone === 'credito'
+                                    ? '#dcfce7'
+                                    : '#e5e7eb',
+                            color:
+                                meta.tone === 'debito'
+                                    ? '#991b1b'
+                                    : meta.tone === 'credito'
+                                    ? '#166534'
+                                    : '#374151',
+                            letterSpacing: '0.02em',
+                        }}
+                    >
+                        {meta.badge}
+                    </span>
+                )}
+            </div>
+        );
     };
 
-    // Telas de Carregamento e Erro
-    if (loading) return <Layout><div style={{padding: '20px', fontSize: '18px'}}>Carregando dados da conta corrente...</div></Layout>;
-    if (error) return <Layout><div style={{padding: '20px', color: '#dc2626', backgroundColor: '#fecaca', border: '1px solid #f87171', borderRadius: '4px'}}>Erro: {error}</div></Layout>;
-    if (!clientData || !clientData.cliente) return <Layout><div style={{padding: '20px', color: '#3b82f6'}}>Cliente não encontrado. Verifique o ID.</div></Layout>;
+    const renderValueCell = (transacao) => {
+        const tipo = transacao.tipo;
+        const valorVisual = safeNumber(transacao.valor_visual ?? transacao.valor_total);
+        const valorFinanceiro = safeNumber(transacao.valor_total);
 
-    const { cliente, extrato } = clientData;
+        if (tipo === 'DEPOSITO') {
+            return <span style={{ color: '#64748b' }}>---</span>;
+        }
+
+        if (tipo === 'ADIANTAMENTO') {
+            return (
+                <span style={{ color: '#b91c1c', fontWeight: 700 }}>
+                    - {formatCurrency(Math.abs(valorFinanceiro || valorVisual))}
+                </span>
+            );
+        }
+
+        if (tipo === 'VENDA_NOVO' || tipo === 'VENDA_DEPOSITO') {
+            return (
+                <span style={{ color: '#0f172a', fontWeight: 700 }}>
+                    {formatCurrency(valorVisual)}
+                </span>
+            );
+        }
+
+        return (
+            <span style={{ fontWeight: 700 }}>
+                {formatCurrency(Math.abs(valorFinanceiro || valorVisual))}
+            </span>
+        );
+    };
+
+    const getRowStyle = (transacao) => {
+        if (transacao.tipo === 'ADIANTAMENTO') return styles.debito;
+        if (transacao.tipo === 'DEPOSITO') return styles.neutro;
+        if (transacao.tipo === 'VENDA_DEPOSITO') return styles.saidaEstoque;
+        return '';
+    };
+
+    if (isIdInvalid) {
+        return (
+            <Layout>
+                <div className={styles.pageState}>
+                    <AlertTriangle size={18} />
+                    <span>Erro: ID inválido.</span>
+                </div>
+            </Layout>
+        );
+    }
+
+    if (loading) {
+        return (
+            <Layout>
+                <div className={styles.pageState}>
+                    <RefreshCw size={18} className={styles.spinningIcon} />
+                    <span>Carregando dados da conta corrente...</span>
+                </div>
+            </Layout>
+        );
+    }
+
+    if (error) {
+        return (
+            <Layout>
+                <div className={styles.pageStateError}>
+                    <AlertTriangle size={18} />
+                    <span>Erro: {error}</span>
+                </div>
+            </Layout>
+        );
+    }
+
+    if (!accountData || !accountData.cliente) {
+        return (
+            <Layout>
+                <div className={styles.pageState}>
+                    <span>Cliente não encontrado. Verifique o ID.</span>
+                </div>
+            </Layout>
+        );
+    }
+
+    const { cliente, extrato } = accountData;
     const saldo = formatBalance(cliente.saldo);
 
     return (
         <Layout>
-            <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '20px', color: '#333' }}>
-                Conta Corrente: {cliente.nome}
-            </h2>
-            
-            {/* Seção de Saldo e Lançamento */}
-            <div style={{ padding: '20px', border: '1px solid #ccc', borderRadius: '8px', marginBottom: '20px', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <p style={{ fontSize: '18px', fontWeight: '600', color: '#333' }}>Saldo Atual:</p>
-                    <span className={saldo.className} style={{ fontSize: '24px' }}>
-                        {saldo.display} ({saldo.nature})
-                    </span>
-                </div>
-                <p style={{ fontSize: '14px', color: '#666', marginTop: '10px' }}>CPF: {cliente.cpf} | Tel: {cliente.telefone}</p>
-                <button 
-                    onClick={() => setShowTransactionForm(true)} 
-                    style={{ padding: '8px 15px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', marginTop: '15px' }}
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '12px',
+                    marginBottom: '20px',
+                    flexWrap: 'wrap',
+                }}
+            >
+                <button
+                    onClick={() => navigate(-1)}
+                    style={{
+                        padding: '10px 14px',
+                        cursor: 'pointer',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '10px',
+                        background: '#fff',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontWeight: 600,
+                    }}
                 >
-                    + Lançar Transação
+                    <ArrowLeft size={16} />
+                    Voltar
                 </button>
+
+                <h2 className={styles.title} style={{ margin: 0 }}>
+                    Conta Corrente: {cliente.nome}
+                </h2>
+
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => fetchClientAccount(filterDates)}
+                        style={{
+                            padding: '10px 14px',
+                            cursor: 'pointer',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '10px',
+                            background: '#fff',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontWeight: 600,
+                        }}
+                    >
+                        <RefreshCw size={16} />
+                        Atualizar
+                    </button>
+
+                    <button
+                        onClick={() => setShowTransactionForm(true)}
+                        className={styles.transactionButton}
+                    >
+                        <Plus size={16} />
+                        Nova Movimentação
+                    </button>
+                </div>
             </div>
-            
-            {/* Título e Formulário de Filtro de Data */}
-            <h3 style={{ fontSize: '20px', fontWeight: 'bold', marginTop: '30px', marginBottom: '10px', color: '#333' }}>
-                Histórico de Transações
-            </h3>
-            
-            <form onSubmit={handleFilterSubmit} style={{ display: 'flex', gap: '15px', alignItems: 'flex-end', marginBottom: '20px', padding: '15px', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#f9fafb' }}>
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: '500' }}>Data Início:</label>
-                    <input 
+
+            <div className={styles.header}>
+                <div className={styles.info}>
+                    <p><strong>CPF:</strong> {cliente.cpf || '-'}</p>
+                    <p><strong>Telefone:</strong> {cliente.telefone || '-'}</p>
+                    <p>
+                        <strong>Risco:</strong> {cliente.perfil_risco || 'Normal'} |{' '}
+                        <strong>Juros:</strong> {safeNumber(cliente.taxa_juros)}% a.m.
+                    </p>
+                </div>
+            </div>
+
+            <div className={styles.summary} style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                <div className={styles.balanceCard}>
+                    <p>Saldo Financeiro</p>
+                    <h3 className={saldo.className}>
+                        {saldo.display} {saldo.nature}
+                    </h3>
+                </div>
+
+                <div className={styles.balanceCard} style={{ backgroundColor: '#e9ecef', color: '#333' }}>
+                    <p>Cacau em Depósito</p>
+                    <h3>{formatKg(cliente.total_depositado)} Kg</h3>
+                    <small>Estoque líquido disponível</small>
+                </div>
+
+                <div className={styles.balanceCard} style={{ backgroundColor: '#f8fafc', color: '#333' }}>
+                    <p>Adiantamentos no Filtro</p>
+                    <h3>{formatCurrency(resumoExtrato.totalAdiantamentos)}</h3>
+                    <small>Período selecionado</small>
+                </div>
+
+                <div className={styles.balanceCard} style={{ backgroundColor: '#ecfeff', color: '#333' }}>
+                    <p>Venda de Depósito no Filtro</p>
+                    <h3>{formatKg(resumoExtrato.totalSaidaDepositoKg)} Kg</h3>
+                    <small>Saída do estoque no período</small>
+                </div>
+            </div>
+
+            <form
+                onSubmit={handleFilterSubmit}
+                className={styles.filterContainer}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Filter size={16} />
+                    <strong>Filtros</strong>
+                </div>
+
+                <label>
+                    Data Início:
+                    <input
                         type="date"
                         name="startDate"
                         value={filterDates.startDate}
                         onChange={handleFilterChange}
-                        style={{ padding: '8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
                     />
-                </div>
-                <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontSize: '14px', fontWeight: '500' }}>Data Fim:</label>
-                    <input 
+                </label>
+
+                <label>
+                    Data Fim:
+                    <input
                         type="date"
                         name="endDate"
                         value={filterDates.endDate}
                         onChange={handleFilterChange}
-                        style={{ padding: '8px', border: '1px solid #d1d5db', borderRadius: '4px' }}
                     />
-                </div>
-                <button 
-                    type="submit"
-                    style={{ padding: '8px 15px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                >
+                </label>
+
+                <button type="submit" className={styles.clearFilterButton}>
                     Filtrar
                 </button>
-                <button 
+
+                <button
                     type="button"
-                    onClick={() => {
-                        setFilterDates({ startDate: '', endDate: '' });
-                        fetchClientAccount({ startDate: '', endDate: '' }); // Limpa filtro e recarrega
-                    }}
-                    style={{ padding: '8px 15px', backgroundColor: '#9ca3af', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    onClick={handleClearFilters}
+                    className={styles.clearFilterButton}
                 >
                     Limpar
                 </button>
             </form>
-            
-            {/* Histórico de Transações (Extrato) */}
-            <div style={{ overflowX: 'auto', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+
+            <div className={styles.tableWrapper}>
                 <table className={styles.table}>
                     <thead>
                         <tr>
                             <th>Data</th>
                             <th>Tipo</th>
-                            <th>Peso (Kg)</th>
-                            <th>Preço (R$/Kg)</th>
-                            <th>Valor Total (R$)</th>
+                            <th style={{ textAlign: 'right' }}>Peso (Kg)</th>
+                            <th style={{ textAlign: 'right' }}>Preço (R$/Kg)</th>
+                            <th style={{ textAlign: 'right' }}>Valor</th>
+                            <th>Obs</th>
+                            <th>Ações</th>
                         </tr>
                     </thead>
+
                     <tbody>
+                        {extrato.length === 0 && (
+                            <tr>
+                                <td colSpan="7" style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+                                    Nenhuma transação encontrada.
+                                </td>
+                            </tr>
+                        )}
+
                         {extrato.map((t) => (
-                            <tr key={t.id}>
-                                <td>{new Date(t.data_transacao).toLocaleDateString('pt-BR')}</td>
-                                <td>{t.tipo.replace('_', ' ')}</td>
-                                <td>{t.peso_kg ? parseFloat(t.peso_kg).toFixed(2) : '-'}</td>
-                                <td>{t.preco_por_kg ? parseFloat(t.preco_por_kg).toFixed(2) : '-'}</td>
-                                <td style={{ color: t.valor_total > 0 ? '#006400' : '#8b0000', fontWeight: 'bold' }}>
-                                    {formatCurrency(t.valor_total)}
+                            <tr key={t.id} className={getRowStyle(t)}>
+                                <td>{formatDate(t.data_transacao)}</td>
+                                <td>{renderTransactionType(t)}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                    {safeNumber(t.peso_kg) > 0 ? `${formatKg(t.peso_kg)}` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                    {safeNumber(t.preco_por_kg) > 0
+                                        ? formatCurrency(t.preco_por_kg)
+                                        : '-'}
+                                </td>
+                                <td style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                                    {renderValueCell(t)}
+                                </td>
+                                <td>{t.observacao || '-'}</td>
+                                <td>
+                                    <button
+                                        onClick={() => handleDeleteTransaction(t)}
+                                        style={{
+                                            color: '#dc2626',
+                                            border: 'none',
+                                            background: 'none',
+                                            cursor: 'pointer',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px',
+                                            fontWeight: 600,
+                                        }}
+                                    >
+                                        <Trash2 size={14} />
+                                        Excluir
+                                    </button>
                                 </td>
                             </tr>
                         ))}
-                        {extrato.length === 0 && (
-                            <tr><td colSpan="5" style={{textAlign: 'center', color: '#999'}}>Nenhuma transação encontrada.</td></tr>
-                        )}
                     </tbody>
                 </table>
             </div>
-            
-            {/* Renderiza a Modal de Lançamento */}
+
             {showTransactionForm && (
-                <TransactionForm
-                    clientId={clientId}
+                <TransactionModal
                     onClose={() => setShowTransactionForm(false)}
-                    onSave={() => {
+                    onSuccess={() => {
                         setShowTransactionForm(false);
-                        fetchClientAccount(); // Recarrega os dados (usando filtro ativo, se houver)
+                        fetchClientAccount(filterDates);
                     }}
+                    clienteId={cliente.id}
+                    clienteNome={cliente.nome}
                 />
             )}
-
         </Layout>
     );
 };

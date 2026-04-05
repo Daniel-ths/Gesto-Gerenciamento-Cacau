@@ -1,87 +1,244 @@
 .container {
-    margin-bottom: 25px;
-    padding: 15px;
-    background-color: #fff;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }
 
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
 }
 
 .card {
-    background: #f8f9fa;
-    border-radius: 10px;
-    padding: 20px;
+    position: relative;
+    overflow: hidden;
     display: flex;
     align-items: center;
-    gap: 15px;
-    border: 1px solid transparent;
-    transition: transform 0.2s;
+    gap: 14px;
+    min-height: 112px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.10);
 }
 
-.iconArea {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+.cardEstoque {
+    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+}
+
+.cardPagar {
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.cardReceber {
+    background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+}
+
+.cardTotal {
+    background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.iconArea,
+.iconAreaNeutral {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+}
+
+.iconArea {
+    background: linear-gradient(135deg, #334155 0%, #0f172a 100%);
+}
+
+.iconAreaNeutral {
+    background: #e2e8f0;
 }
 
 .infoArea {
     display: flex;
     flex-direction: column;
+    gap: 4px;
+    min-width: 0;
 }
 
 .infoArea span {
-    font-size: 0.85rem;
-    color: #6c757d;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: #64748b;
+    font-size: 0.84rem;
+    font-weight: 700;
+    line-height: 1.2;
 }
 
 .infoArea h3 {
-    margin: 5px 0 2px 0;
-    font-size: 1.4rem;
-    color: #212529;
-    font-weight: 700;
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.45rem;
+    font-weight: 800;
+    line-height: 1.1;
+    word-break: break-word;
 }
 
 .infoArea small {
-    font-size: 0.75rem;
-    color: #adb5bd;
+    color: #64748b;
+    font-size: 0.8rem;
+    line-height: 1.3;
 }
 
-/* --- CORES ESPECÍFICAS --- */
+.secondaryGrid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
 
-/* Estoque (Laranja/Marrom Cacau) */
-.cardEstoque { border-bottom: 3px solid #d35400; }
-.cardEstoque .iconArea { background: linear-gradient(135deg, #e67e22, #d35400); }
-.cardEstoque h3 { color: #d35400; }
+.miniCard {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+}
 
-/* A Pagar (Vermelho - Alerta) */
-.cardPagar { border-bottom: 3px solid #dc3545; }
-.cardPagar .iconArea { background: linear-gradient(135deg, #ff6b6b, #c0392b); }
-.cardPagar h3 { color: #dc3545; }
+.miniCard strong {
+    display: block;
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
 
-/* A Receber (Verde - Dinheiro entrando) */
-.cardReceber { border-bottom: 3px solid #198754; }
-.cardReceber .iconArea { background: linear-gradient(135deg, #2ecc71, #27ae60); }
-.cardReceber h3 { color: #198754; }
+.miniCard span {
+    display: block;
+    color: #64748b;
+    font-size: 0.82rem;
+    margin-top: 2px;
+}
 
-/* Total Clientes (Azul/Cinza Neutro) */
-.cardTotal { border-bottom: 3px solid #6c757d; }
-.cardTotal .iconArea { background: #e9ecef; }
-.cardTotal .iconArea svg { stroke: #495057; }
+.miniIconWarning,
+.miniIconDanger,
+.miniIconInfo {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.miniIconWarning {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.miniIconDanger {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.miniIconInfo {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.stateBox,
+.emptyState {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px;
+    border-radius: 16px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.stateBox {
+    color: #334155;
+    font-weight: 600;
+}
+
+.loadingDot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    background: #3b82f6;
+    animation: pulseDot 1s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+    0% {
+        transform: scale(0.9);
+        opacity: 0.65;
+    }
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(0.9);
+        opacity: 0.65;
+    }
+}
+
+.emptyState h3 {
+    margin: 0 0 4px;
+    color: #0f172a;
+    font-size: 1rem;
+}
+
+.emptyState p {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.88rem;
+    line-height: 1.4;
+}
+
+.emptyIcon {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 12px;
+    background: #e2e8f0;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@media (max-width: 1100px) {
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .secondaryGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .card {
+        min-height: auto;
+    }
+
+    .infoArea h3 {
+        font-size: 1.25rem;
+    }
+}

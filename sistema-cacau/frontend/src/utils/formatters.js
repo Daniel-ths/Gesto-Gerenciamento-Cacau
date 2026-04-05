@@ -1,12 +1,23 @@
+const toSafeNumber = (value) => {
+    if (value === null || value === undefined || value === '') return 0;
 
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : 0;
+    }
 
+    const normalized = String(value)
+        .trim()
+        .replace(/\s+/g, '')
+        .replace(/\./g, '')
+        .replace(',', '.')
+        .replace(/[^\d.-]/g, '');
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export const formatCurrency = (value) => {
-
-    const numberValue = parseFloat(value);
-    if (isNaN(numberValue)) {
-        return 'R$ 0,00';
-    }
+    const numberValue = toSafeNumber(value);
 
     return numberValue.toLocaleString('pt-BR', {
         style: 'currency',
@@ -14,16 +25,14 @@ export const formatCurrency = (value) => {
     });
 };
 
-
 export const formatDate = (dateString) => {
     if (!dateString) return '-';
-    
-    try {
-        const date = new Date(dateString);
 
-        return date.toLocaleDateString('pt-BR'); 
-    } catch (e) {
-        console.error("Erro ao formatar data:", e);
-        return dateString;
+    const date = new Date(dateString);
+
+    if (Number.isNaN(date.getTime())) {
+        return '-';
     }
+
+    return date.toLocaleDateString('pt-BR');
 };

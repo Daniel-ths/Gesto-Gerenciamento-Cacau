@@ -1,0 +1,266 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding-bottom: 32px;
+}
+
+.topBar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.title {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.subtitle {
+    margin: 6px 0 0;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.topActions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.primaryButton,
+.secondaryButton {
+    border: none;
+    border-radius: 10px;
+    padding: 11px 16px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.primaryButton {
+    background: #2563eb;
+    color: #fff;
+}
+
+.secondaryButton {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.filtersCard {
+    display: grid;
+    grid-template-columns: 180px 180px 1fr;
+    gap: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 18px;
+}
+
+.filterGroup,
+.filterGroupSearch {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filterGroup label,
+.filterGroupSearch label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #475569;
+}
+
+.filterGroup input,
+.filterGroupSearch input {
+    height: 42px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    padding: 0 12px;
+    font-size: 14px;
+}
+
+.kpiGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.kpiCard {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.kpiCard span {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.kpiCard strong {
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.section h2 {
+    margin: 0;
+    font-size: 20px;
+    color: #0f172a;
+}
+
+.sectionGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+}
+
+.alertList {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.alertItem,
+.alertItemOk {
+    padding: 14px 16px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.alertItem {
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    color: #9a3412;
+}
+
+.alertItemOk {
+    background: #ecfdf5;
+    border: 1px solid #86efac;
+    color: #166534;
+}
+
+.summaryGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.summaryCard,
+.tableCard {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 18px;
+}
+
+.summaryCard h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    color: #0f172a;
+}
+
+.summaryCard p {
+    margin: 8px 0;
+    color: #334155;
+}
+
+.tableCard h2 {
+    margin: 0 0 14px;
+    font-size: 18px;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table th,
+.table td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+    font-size: 14px;
+    vertical-align: middle;
+}
+
+.table th {
+    color: #475569;
+    font-weight: 700;
+    background: #f8fafc;
+}
+
+.positive {
+    color: #15803d;
+    font-weight: 700;
+}
+
+.negative {
+    color: #dc2626;
+    font-weight: 700;
+}
+
+.stateBox,
+.stateBoxError {
+    padding: 24px;
+    border-radius: 16px;
+    font-weight: 700;
+}
+
+.stateBox {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.stateBoxError {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+@media (max-width: 1200px) {
+    .kpiGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .summaryGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .sectionGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .filtersCard {
+        grid-template-columns: 1fr;
+    }
+
+    .kpiGrid,
+    .summaryGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .tableCard {
+        overflow-x: auto;
+    }
+
+    .title {
+        font-size: 24px;
+    }
+}

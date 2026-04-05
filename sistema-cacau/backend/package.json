@@ -20,7 +20,11 @@
   },
   "build": {
     "appId": "com.rafaelmilesky.cacau",
-    "productName": "Gestão Cacau",
+    "win": {
+      "icon": "public/Novo Projeto.ico"
+    },
+
+    "productName": "RCM - Gestão",
     "asar": false,
     "directories": {
       "output": "dist"
@@ -30,10 +34,6 @@
       "package.json",
       "backend/**/*",
       "frontend/dist/**/*"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "icon.png"
-    }
+    ]
   }
 }

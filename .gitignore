@@ -1,0 +1,6 @@
+sistema-cacau/dist/
+sistema-cacau/.vscode/
+node_modules/
+*.db
+*.sqlite
+.env

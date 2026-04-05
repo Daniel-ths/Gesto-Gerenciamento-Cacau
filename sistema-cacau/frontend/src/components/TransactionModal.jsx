@@ -1,204 +1,524 @@
-// frontend/src/components/TransactionModal.jsx
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Package, CreditCard, Banknote, ArrowRightLeft } from 'lucide-react';
+import React, { useState, useEffect, memo } from 'react';
+import {
+    X,
+    Save,
+    Package,
+    CreditCard,
+    Banknote,
+    ArrowRightLeft,
+    Plus,
+    Eraser,
+    Wallet,
+    Landmark,
+} from 'lucide-react';
 import styles from './TransactionModal.module.css';
 import { api } from '../api';
 
-const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome }) => {
-    
-    // Configuração Visual dos Tipos
-    const TYPES = {
-        COMPRA_PRAZO: { 
-            label: 'Compra a Prazo', 
-            desc: 'Gera saldo devedor',
-            color: '#ef4444', // Vermelho (Dívida)
-            icon: <CreditCard size={24} />
-        },
-        COMPRA_AVISTA: { 
-            label: 'Compra à Vista', 
-            desc: 'Dinheiro na mão',
-            color: '#10b981', // Verde
-            icon: <Banknote size={24} />
-        },
-        DEPOSITO: { 
-            label: 'Depósito (Estoque)', 
-            desc: 'Apenas guarda cacau',
-            color: '#d97706', // Laranja/Marrom
-            icon: <Package size={24} />
-        },
-        PAGAMENTO: { 
-            label: 'Pagar Cliente', 
-            desc: 'Baixa na dívida',
-            color: '#3b82f6', // Azul
-            icon: <ArrowRightLeft size={24} />
-        }
-    };
+const TYPES = {
+    ADIANTAMENTO: {
+        label: 'Adiantamento',
+        desc: 'Lança débito ao cliente',
+        color: '#ef4444',
+        icon: <CreditCard size={22} />
+    },
+    VENDA_NOVO: {
+        label: 'Venda de Cacau',
+        desc: 'Venda imediata do cacau entregue',
+        color: '#10b981',
+        icon: <Banknote size={22} />
+    },
+    DEPOSITO: {
+        label: 'Depósito',
+        desc: 'Somente guarda no estoque',
+        color: '#d97706',
+        icon: <Package size={22} />
+    },
+    VENDA_DEPOSITO: {
+        label: 'Venda de Depósito',
+        desc: 'Vende do estoque já depositado',
+        color: '#0ea5e9',
+        icon: <ArrowRightLeft size={22} />
+    },
+    SAQUE: {
+        label: 'Saque',
+        desc: 'Retirada de dinheiro da conta do cliente',
+        color: '#7c3aed',
+        icon: <Wallet size={22} />
+    },
+    DEPOSITO_DINHEIRO: {
+        label: 'Depósito de Dinheiro',
+        desc: 'Entrada de dinheiro na conta do cliente',
+        color: '#14b8a6',
+        icon: <Landmark size={22} />
+    }
+};
 
-    const [formData, setFormData] = useState({
-        tipo: 'COMPRA_PRAZO',
-        data: new Date().toISOString().split('T')[0],
-        peso: '',
-        preco: '',
-        valor_total: '',
-        observacao: ''
-    });
+const getInitialState = () => ({
+    tipo: 'ADIANTAMENTO',
+    data: new Date().toISOString().split('T')[0],
+    peso: '',
+    preco: '',
+    valor_total: '',
+    observacao: ''
+});
 
+const parseDecimal = (value) => {
+    if (value === '' || value == null) return 0;
+
+    const cleaned = String(value)
+        .trim()
+        .replace(/\s+/g, '')
+        .replace(',', '.')
+        .replace(/[^\d.]/g, '');
+
+    const parts = cleaned.split('.');
+    const normalized =
+        parts.length <= 2 ? cleaned : `${parts[0]}.${parts.slice(1).join('')}`;
+
+    const n = parseFloat(normalized);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const toInputDecimal = (value) => {
+    if (value === '' || value == null || Number(value) === 0) return '';
+    return Number(value)
+        .toFixed(2)
+        .replace(/\.00$/, '')
+        .replace('.', ',');
+};
+
+const addToField = (currentValue, increment) => {
+    const next = parseDecimal(currentValue) + increment;
+    return toInputDecimal(next);
+};
+
+function TransactionModal({ onClose, onSuccess, clienteId, clienteNome }) {
+    const [formData, setFormData] = useState(getInitialState());
     const [loading, setLoading] = useState(false);
-    
-    // Refs para focar inputs
-    const pesoInputRef = useRef(null);
-    const valorInputRef = useRef(null);
+    const [error, setError] = useState('');
 
-    // Foca no campo certo quando muda o tipo
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (formData.tipo === 'PAGAMENTO') {
-                valorInputRef.current?.focus();
-            } else {
-                pesoInputRef.current?.focus();
-            }
-        }, 100);
-        return () => clearTimeout(timer);
-    }, [formData.tipo]);
+    const currentTypeConfig = TYPES[formData.tipo];
 
-    // Cálculo automático: Peso * Preço
-    useEffect(() => {
-        const { peso, preco, tipo } = formData;
-        if (tipo !== 'PAGAMENTO' && peso && preco) {
-            const pesoNum = parseFloat(peso.replace(',', '.'));
-            const precoNum = parseFloat(preco.replace(',', '.'));
-            
-            if (!isNaN(pesoNum) && !isNaN(precoNum)) {
-                const total = (pesoNum * precoNum).toFixed(2);
-                setFormData(prev => ({ ...prev, valor_total: total }));
-            }
+    const isAdiantamento = formData.tipo === 'ADIANTAMENTO';
+    const isDeposito = formData.tipo === 'DEPOSITO';
+    const isVendaNovo = formData.tipo === 'VENDA_NOVO';
+    const isVendaDeposito = formData.tipo === 'VENDA_DEPOSITO';
+    const isSaque = formData.tipo === 'SAQUE';
+    const isDepositoDinheiro = formData.tipo === 'DEPOSITO_DINHEIRO';
+
+    const isMoneyOnly = isAdiantamento || isSaque || isDepositoDinheiro;
+
+    const showPeso = isDeposito || isVendaNovo || isVendaDeposito;
+    const showPreco = isVendaNovo || isVendaDeposito;
+    const showTotal = isMoneyOnly || isVendaNovo || isVendaDeposito;
+
+    let totalLabel = 'Valor Total';
+    if (isAdiantamento) totalLabel = 'Valor do Adiantamento';
+    if (isVendaDeposito) totalLabel = 'Valor Total da Venda de Depósito';
+    if (isVendaNovo) totalLabel = 'Valor Total da Venda';
+    if (isSaque) totalLabel = 'Valor do Saque';
+    if (isDepositoDinheiro) totalLabel = 'Valor do Depósito de Dinheiro';
+
+    let valorTotalCalculado = '';
+    if (isMoneyOnly) {
+        valorTotalCalculado = formData.valor_total;
+    } else if (showPeso && showPreco) {
+        const pesoNum = parseDecimal(formData.peso);
+        const precoNum = parseDecimal(formData.preco);
+
+        if (pesoNum && precoNum) {
+            valorTotalCalculado = (pesoNum * precoNum).toFixed(2);
         }
-    }, [formData.peso, formData.preco, formData.tipo]);
+    }
+
+    let validationMessage = '';
+    if (!formData.data) {
+        validationMessage = 'Informe a data da operação.';
+    } else if (isAdiantamento) {
+        if (!parseDecimal(formData.valor_total)) {
+            validationMessage = 'Informe o valor do adiantamento.';
+        }
+    } else if (isSaque) {
+        if (!parseDecimal(formData.valor_total)) {
+            validationMessage = 'Informe o valor do saque.';
+        }
+    } else if (isDepositoDinheiro) {
+        if (!parseDecimal(formData.valor_total)) {
+            validationMessage = 'Informe o valor do depósito de dinheiro.';
+        }
+    } else if (isDeposito) {
+        if (!parseDecimal(formData.peso)) {
+            validationMessage = 'Informe o peso do depósito.';
+        }
+    } else if (isVendaNovo || isVendaDeposito) {
+        if (!parseDecimal(formData.peso)) {
+            validationMessage = 'Informe o peso do cacau.';
+        } else if (!parseDecimal(formData.preco)) {
+            validationMessage = 'Informe o preço por Kg.';
+        }
+    }
+
+    const isSubmitDisabled = loading || !!validationMessage;
+
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && !loading) {
+                onClose?.();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [loading, onClose]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+
+        setFormData((prev) => ({
+            ...prev,
+            [name]: value
+        }));
+
+        if (error) setError('');
     };
 
     const handleTypeSelect = (newType) => {
-        setFormData(prev => ({ 
-            ...prev, 
-            tipo: newType, 
-            peso: newType === 'PAGAMENTO' ? '' : prev.peso,
-            preco: newType === 'PAGAMENTO' || newType === 'DEPOSITO' ? '' : prev.preco,
-            valor_total: newType === 'DEPOSITO' ? '' : prev.valor_total
+        setFormData((prev) => {
+            const next = {
+                ...prev,
+                tipo: newType,
+                observacao: prev.observacao,
+                data: prev.data
+            };
+
+            if (newType === 'ADIANTAMENTO' || newType === 'SAQUE' || newType === 'DEPOSITO_DINHEIRO') {
+                next.peso = '';
+                next.preco = '';
+                next.valor_total =
+                    prev.tipo === newType ? prev.valor_total : '';
+            } else if (newType === 'DEPOSITO') {
+                next.peso = prev.tipo === 'DEPOSITO' ? prev.peso : '';
+                next.preco = '';
+                next.valor_total = '';
+            } else {
+                next.peso =
+                    prev.tipo === 'VENDA_NOVO' || prev.tipo === 'VENDA_DEPOSITO'
+                        ? prev.peso
+                        : '';
+                next.preco =
+                    prev.tipo === 'VENDA_NOVO' || prev.tipo === 'VENDA_DEPOSITO'
+                        ? prev.preco
+                        : '';
+                next.valor_total = '';
+            }
+
+            return next;
+        });
+
+        if (error) setError('');
+    };
+
+    const handleQuickAdd = (field, amount) => {
+        setFormData((prev) => ({
+            ...prev,
+            [field]: addToField(prev[field], amount)
         }));
+
+        if (error) setError('');
+    };
+
+    const handleClearMainFields = () => {
+        setFormData((prev) => ({
+            ...prev,
+            peso: '',
+            preco: '',
+            valor_total: ''
+        }));
+
+        if (error) setError('');
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        if (validationMessage) {
+            setError(validationMessage);
+            return;
+        }
+
         setLoading(true);
+        setError('');
 
         try {
             const payload = {
-                // CORREÇÃO AQUI: Mudamos de 'cliente_id' para 'clienteId'
-                // O Backend espera 'clienteId' para vincular corretamente.
-                clienteId: clienteId, 
+                clienteId,
                 tipo: formData.tipo,
                 data_transacao: formData.data,
-                peso_kg: formData.peso ? parseFloat(formData.peso.replace(',', '.')) : 0,
-                preco_por_kg: formData.preco ? parseFloat(formData.preco.replace(',', '.')) : 0,
-                valor_total: formData.valor_total ? parseFloat(formData.valor_total.replace(',', '.')) : 0,
-                observacao: formData.observacao
+                peso_kg: showPeso ? parseDecimal(formData.peso) : 0,
+                preco_por_kg: showPreco ? parseDecimal(formData.preco) : 0,
+                valor_total: showTotal ? parseDecimal(valorTotalCalculado) : 0,
+                observacao: (formData.observacao || '').trim()
             };
 
             const response = await api.post('/transacoes', payload);
-            
-            // Verifica sucesso (compatível com fetch nativo ou axios)
-            if (response.ok || response.status === 200 || response.status === 201) {
-                if (onSuccess) onSuccess(); // Avisa o pai para atualizar a tabela
-                onClose(); // Fecha o modal
-            } else {
-                throw new Error('Erro ao salvar no servidor.');
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.message || 'Erro ao salvar no servidor.');
             }
 
+            onSuccess?.();
+            onClose?.();
         } catch (err) {
             console.error(err);
-            alert("Erro ao salvar: " + err.message);
+            setError(err?.message || 'Falha desconhecida.');
         } finally {
             setLoading(false);
         }
     };
 
-    // Controle de Exibição
-    const currentTypeConfig = TYPES[formData.tipo];
-    const showPeso = formData.tipo !== 'PAGAMENTO';
-    const showPreco = formData.tipo !== 'PAGAMENTO' && formData.tipo !== 'DEPOSITO';
-    const showTotal = formData.tipo !== 'DEPOSITO';
+    const handleOverlayMouseDown = (e) => {
+        if (e.target === e.currentTarget && !loading) {
+            onClose?.();
+        }
+    };
 
     return (
-        <div className={styles.overlay}>
-            <div className={styles.modal}>
-                
+        <div className={styles.overlay} onMouseDown={handleOverlayMouseDown}>
+            <div className={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
                 <div className={styles.header}>
-                    <div>
+                    <div className={styles.headerText}>
                         <h3>Nova Movimentação</h3>
-                        <small style={{color:'#64748b'}}>Cliente: {clienteNome}</small>
+                        <small>Cliente: {clienteNome}</small>
                     </div>
-                    <button onClick={onClose} className={styles.closeButton}><X size={20}/></button>
+
+                    <button
+                        onClick={onClose}
+                        className={styles.closeButton}
+                        type="button"
+                        disabled={loading}
+                        aria-label="Fechar"
+                    >
+                        <X size={20} />
+                    </button>
                 </div>
 
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                    
+                <form onSubmit={handleSubmit} className={styles.formWrap}>
                     <div className={styles.typeGrid}>
                         {Object.entries(TYPES).map(([key, config]) => (
-                            <div 
+                            <button
                                 key={key}
+                                type="button"
                                 className={`${styles.typeCard} ${formData.tipo === key ? styles.active : ''}`}
                                 onClick={() => handleTypeSelect(key)}
                                 style={{ color: formData.tipo === key ? config.color : '' }}
+                                aria-pressed={formData.tipo === key}
                             >
                                 <div className={styles.typeIcon}>{config.icon}</div>
-                                <span className={styles.typeLabel}>{config.label}</span>
-                            </div>
+                                <div className={styles.typeContent}>
+                                    <span className={styles.typeLabel}>{config.label}</span>
+                                    <small>{config.desc}</small>
+                                </div>
+                            </button>
                         ))}
                     </div>
 
                     <div className={styles.formBody}>
-                        <div className={styles.formGroup} style={{ marginBottom: '16px' }}>
-                            <label>Data da Operação</label>
-                            <input 
-                                type="date" 
-                                name="data" 
-                                value={formData.data} 
-                                onChange={handleChange} 
-                                required 
-                            />
+                        <div className={styles.sectionBlock}>
+                            <div className={styles.formGroup}>
+                                <label>Data da Operação</label>
+                                <input
+                                    type="date"
+                                    name="data"
+                                    value={formData.data}
+                                    onChange={handleChange}
+                                    required
+                                />
+                            </div>
                         </div>
 
-                        <div className={styles.row}>
-                            {showPeso && (
-                                <div className={styles.formGroup}>
-                                    <label>Peso do Cacau</label>
-                                    <div className={styles.inputWrapper}>
-                                        <input 
-                                            ref={pesoInputRef}
-                                            type="number" step="0.01" 
-                                            name="peso" 
-                                            value={formData.peso} 
-                                            onChange={handleChange}
-                                            placeholder="0.00"
-                                        />
-                                        <span className={styles.suffix}>Kg</span>
-                                    </div>
-                                </div>
-                            )}
+                        <div className={styles.sectionBlock}>
+                            <div className={styles.sectionHeader}>
+                                <strong>Preenchimento rápido</strong>
+                                <button
+                                    type="button"
+                                    className={styles.quickClearButton}
+                                    onClick={handleClearMainFields}
+                                >
+                                    <Eraser size={14} />
+                                    Limpar
+                                </button>
+                            </div>
 
-                            {showPreco && (
+                            <div className={styles.quickActions}>
+                                {showPeso && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('peso', 1)}
+                                        >
+                                            <Plus size={14} />
+                                            +1 Kg
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('peso', 0.5)}
+                                        >
+                                            <Plus size={14} />
+                                            +0,5 Kg
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('peso', 0.1)}
+                                        >
+                                            <Plus size={14} />
+                                            +0,1 Kg
+                                        </button>
+                                    </>
+                                )}
+
+                                {showPreco && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('preco', 5)}
+                                        >
+                                            <Plus size={14} />
+                                            +5 R$
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('preco', 1)}
+                                        >
+                                            <Plus size={14} />
+                                            +1 R$
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('preco', 0.1)}
+                                        >
+                                            <Plus size={14} />
+                                            +0,1 R$
+                                        </button>
+                                    </>
+                                )}
+
+                                {isMoneyOnly && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('valor_total', 5)}
+                                        >
+                                            <Plus size={14} />
+                                            +5 R$
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('valor_total', 1)}
+                                        >
+                                            <Plus size={14} />
+                                            +1 R$
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            className={styles.quickButton}
+                                            onClick={() => handleQuickAdd('valor_total', 0.1)}
+                                        >
+                                            <Plus size={14} />
+                                            +0,1 R$
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className={styles.sectionBlock}>
+                            <div className={styles.row}>
+                                {showPeso && (
+                                    <div className={styles.formGroup}>
+                                        <label>
+                                            {isDeposito
+                                                ? 'Peso do Depósito'
+                                                : isVendaDeposito
+                                                    ? 'Peso Vendido do Depósito'
+                                                    : 'Peso do Cacau'}
+                                        </label>
+                                        <div className={styles.inputWrapper}>
+                                            <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                name="peso"
+                                                value={formData.peso}
+                                                onChange={handleChange}
+                                                placeholder="0,00"
+                                                autoComplete="off"
+                                                spellCheck={false}
+                                                autoFocus={!isMoneyOnly}
+                                            />
+                                            <span className={styles.suffix}>Kg</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {showPreco && (
+                                    <div className={styles.formGroup}>
+                                        <label>Preço por Kg</label>
+                                        <div className={styles.inputWrapper}>
+                                            <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                name="preco"
+                                                value={formData.preco}
+                                                onChange={handleChange}
+                                                placeholder="0,00"
+                                                autoComplete="off"
+                                                spellCheck={false}
+                                            />
+                                            <span className={styles.suffix}>R$</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {showTotal && (
                                 <div className={styles.formGroup}>
-                                    <label>Preço por Kg</label>
+                                    <label>{totalLabel}</label>
+
                                     <div className={styles.inputWrapper}>
-                                        <input 
-                                            type="number" step="0.01" 
-                                            name="preco" 
-                                            value={formData.preco} 
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            name="valor_total"
+                                            value={
+                                                isMoneyOnly
+                                                    ? formData.valor_total
+                                                    : toInputDecimal(valorTotalCalculado)
+                                            }
                                             onChange={handleChange}
-                                            placeholder="0.00"
+                                            placeholder="0,00"
+                                            readOnly={!isMoneyOnly}
+                                            autoComplete="off"
+                                            spellCheck={false}
+                                            autoFocus={isMoneyOnly}
+                                            style={{
+                                                fontWeight: 'bold',
+                                                color: currentTypeConfig.color,
+                                                backgroundColor: !isMoneyOnly ? '#f8fafc' : '#fff'
+                                            }}
                                         />
                                         <span className={styles.suffix}>R$</span>
                                     </div>
@@ -206,72 +526,142 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome }) => {
                             )}
                         </div>
 
-                        {showTotal && (
+                        <div className={styles.sectionBlock}>
                             <div className={styles.formGroup}>
-                                <label>{formData.tipo === 'PAGAMENTO' ? 'Valor a Pagar' : 'Valor Total Calculado'}</label>
-                                <div className={styles.inputWrapper}>
-                                    <input 
-                                        ref={valorInputRef}
-                                        type="number" step="0.01" 
-                                        name="valor_total" 
-                                        value={formData.valor_total} 
-                                        onChange={handleChange}
-                                        placeholder="0.00"
-                                        style={{ fontWeight: 'bold', color: currentTypeConfig.color }}
-                                    />
-                                    <span className={styles.suffix}>R$</span>
-                                </div>
+                                <label>Observação (Opcional)</label>
+                                <input
+                                    type="text"
+                                    name="observacao"
+                                    value={formData.observacao}
+                                    onChange={handleChange}
+                                    placeholder="Detalhes..."
+                                    autoComplete="off"
+                                />
                             </div>
-                        )}
-
-                        <div className={styles.formGroup} style={{ marginTop: '16px' }}>
-                            <label>Observação (Opcional)</label>
-                            <input 
-                                type="text" 
-                                name="observacao" 
-                                value={formData.observacao} 
-                                onChange={handleChange}
-                                placeholder="Detalhes..."
-                            />
                         </div>
 
-                        {showPeso && showPreco && formData.peso && formData.preco && (
+                        {!!error && <div className={styles.errorBox}>{error}</div>}
+
+                        {(isVendaNovo || isVendaDeposito) && formData.peso && formData.preco && (
                             <div className={styles.totalHighlight}>
-                                <small>Resumo da Transação</small>
-                                <div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:'10px', color: '#64748b'}}>
+                                <small>
+                                    {isVendaDeposito
+                                        ? 'Resumo da Venda de Depósito'
+                                        : 'Resumo da Venda de Cacau'}
+                                </small>
+
+                                <div className={styles.highlightLine}>
                                     <span>{formData.peso} Kg</span>
-                                    <X size={12}/>
+                                    <X size={12} />
                                     <span>R$ {formData.preco}</span>
                                     <span>=</span>
-                                    <span className={styles.totalValue} style={{ color: currentTypeConfig.color }}>
-                                        R$ {formData.valor_total}
+                                    <span
+                                        className={styles.totalValue}
+                                        style={{ color: currentTypeConfig.color }}
+                                    >
+                                        R$ {toInputDecimal(valorTotalCalculado || '0.00')}
                                     </span>
                                 </div>
                             </div>
                         )}
-                        
-                        {formData.tipo === 'DEPOSITO' && (
-                            <div className={styles.totalHighlight} style={{ background: '#fff7ed', borderColor: '#fdba74' }}>
-                                <Package size={24} color="#d97706" style={{ marginBottom: '5px' }}/>
-                                <div className={styles.totalValue} style={{ color: '#d97706' }}>
-                                    + {formData.peso || 0} Kg
+
+                        {isDeposito && (
+                            <div
+                                className={styles.totalHighlight}
+                                style={{ background: '#fff7ed', borderColor: '#fdba74' }}
+                            >
+                                <Package size={22} color="#d97706" />
+                                <div
+                                    className={styles.totalValue}
+                                    style={{ color: '#d97706' }}
+                                >
+                                    + {formData.peso || '0'} Kg
                                 </div>
-                                <small style={{ color: '#9a3412' }}>Será adicionado ao estoque do cliente.</small>
+                                <small style={{ color: '#9a3412' }}>
+                                    Será adicionado ao estoque do cliente.
+                                </small>
                             </div>
                         )}
 
+                        {isAdiantamento && formData.valor_total && (
+                            <div
+                                className={styles.totalHighlight}
+                                style={{ background: '#fef2f2', borderColor: '#fca5a5' }}
+                            >
+                                <CreditCard size={22} color="#ef4444" />
+                                <div
+                                    className={styles.totalValue}
+                                    style={{ color: '#ef4444' }}
+                                >
+                                    R$ {formData.valor_total || '0,00'}
+                                </div>
+                                <small style={{ color: '#991b1b' }}>
+                                    Será lançado como débito na conta corrente do cliente.
+                                </small>
+                            </div>
+                        )}
+
+                        {isSaque && formData.valor_total && (
+                            <div
+                                className={styles.totalHighlight}
+                                style={{ background: '#f5f3ff', borderColor: '#c4b5fd' }}
+                            >
+                                <Wallet size={22} color="#7c3aed" />
+                                <div
+                                    className={styles.totalValue}
+                                    style={{ color: '#7c3aed' }}
+                                >
+                                    R$ {formData.valor_total || '0,00'}
+                                </div>
+                                <small style={{ color: '#5b21b6' }}>
+                                    Será lançado como saque da conta corrente do cliente.
+                                </small>
+                            </div>
+                        )}
+
+                        {isDepositoDinheiro && formData.valor_total && (
+                            <div
+                                className={styles.totalHighlight}
+                                style={{ background: '#f0fdfa', borderColor: '#99f6e4' }}
+                            >
+                                <Landmark size={22} color="#14b8a6" />
+                                <div
+                                    className={styles.totalValue}
+                                    style={{ color: '#14b8a6' }}
+                                >
+                                    R$ {formData.valor_total || '0,00'}
+                                </div>
+                                <small style={{ color: '#115e59' }}>
+                                    Será lançado como depósito de dinheiro na conta do cliente.
+                                </small>
+                            </div>
+                        )}
                     </div>
 
                     <div className={styles.footer}>
-                        <button type="button" onClick={onClose} className={styles.cancelBtn}>Cancelar</button>
-                        <button type="submit" className={styles.saveBtn} disabled={loading} style={{ backgroundColor: currentTypeConfig.color }}>
-                            <Save size={18} /> {loading ? 'Salvando...' : 'Confirmar Lançamento'}
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className={styles.cancelBtn}
+                            disabled={loading}
+                        >
+                            Cancelar
+                        </button>
+
+                        <button
+                            type="submit"
+                            className={styles.saveBtn}
+                            disabled={isSubmitDisabled}
+                            style={{ backgroundColor: currentTypeConfig.color }}
+                        >
+                            <Save size={18} />
+                            {loading ? 'Salvando...' : 'Confirmar Lançamento'}
                         </button>
                     </div>
                 </form>
             </div>
         </div>
     );
-};
+}
 
-export default TransactionModal;
+export default memo(TransactionModal);

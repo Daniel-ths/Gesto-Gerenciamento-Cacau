@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node backend/index.js",
     "electron": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder --win --publish never"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -20,20 +20,21 @@
   },
   "build": {
     "appId": "com.rafaelmilesky.cacau",
-    "productName": "Gestão Cacau",
+    "productName": "RCM - Gestão",
     "asar": false,
     "directories": {
       "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico"
     },
     "files": [
       "main.js",
       "package.json",
       "backend/**/*",
-      "frontend/dist/**/*"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "icon.png"
-    }
+      "frontend/dist/**/*",
+      "public/**/*"
+    ]
   }
 }
