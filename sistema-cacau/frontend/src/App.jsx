@@ -6,7 +6,6 @@ import ClientList from './pages/ClientList';
 import ContaCorrente from './pages/ContaCorrente';
 import GeneralReport from './pages/GeneralReport';
 
-// --- ✅ URL CORRIGIDA (Aponta sempre para a versão atual) ---
 const LICENSE_URL =
   'https://gist.githubusercontent.com/Daniel-ths/ace75c57234ce4981f00cb76b0054423/raw/status.json';
 

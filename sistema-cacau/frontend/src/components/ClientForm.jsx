@@ -14,7 +14,7 @@ const overlayStyle = {
 
 const modalStyle = {
   width: '100%',
-  maxWidth: '760px',
+  maxWidth: '920px',
   background: '#ffffff',
   borderRadius: '20px',
   boxShadow: '0 25px 60px rgba(15, 23, 42, 0.22)',
@@ -33,7 +33,7 @@ const bodyStyle = {
 
 const gridStyle = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gridTemplateColumns: '1.1fr 1.2fr 0.9fr',
   gap: '16px',
 };
 
@@ -51,6 +51,7 @@ const inputStyle = {
   outline: 'none',
   fontSize: '14px',
   background: '#fff',
+  boxSizing: 'border-box',
 };
 
 const footerStyle = {
@@ -84,6 +85,8 @@ const TYPE_OPTIONS = [
   { value: 'FORNECEDOR', label: 'Produtor / Fornecedor' },
   { value: 'INDUSTRIA', label: 'Comprador / Indústria' },
 ];
+
+const RISK_OPTIONS = ['Normal', 'Bom Pagador (Baixo)', 'Arriscado (Alto)', 'VIP'];
 
 const formatCPF = (value) => {
   let v = String(value || '').replace(/\D/g, '').slice(0, 11);
@@ -149,8 +152,30 @@ const getInitialState = (defaultType = 'FORNECEDOR') => ({
   tipo_cadastro: normalizeTipoCadastro(defaultType),
 });
 
+const getResponsiveGridStyle = () => {
+  if (typeof window === 'undefined') return gridStyle;
+
+  if (window.innerWidth <= 760) {
+    return {
+      ...gridStyle,
+      gridTemplateColumns: '1fr',
+    };
+  }
+
+  return gridStyle;
+};
+
 const ClientForm = ({ onClose, onSave, clientToEdit, defaultType = 'FORNECEDOR' }) => {
   const [clientData, setClientData] = useState(getInitialState(defaultType));
+  const [responsiveGrid, setResponsiveGrid] = useState(getResponsiveGridStyle());
+
+  useEffect(() => {
+    const handleResize = () => setResponsiveGrid(getResponsiveGridStyle());
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (clientToEdit) {
@@ -225,7 +250,6 @@ const ClientForm = ({ onClose, onSave, clientToEdit, defaultType = 'FORNECEDOR' 
       e.preventDefault();
 
       const nome = String(clientData.nome || '').trim();
-
       if (!nome) {
         alert('O nome é obrigatório.');
         return;
@@ -243,21 +267,24 @@ const ClientForm = ({ onClose, onSave, clientToEdit, defaultType = 'FORNECEDOR' 
     [clientData, onSave]
   );
 
+  const isMobile = responsiveGrid.gridTemplateColumns === '1fr';
+  const fullWidth = isMobile ? {} : { gridColumn: '1 / -1' };
+
   return (
-    <div style={overlayStyle} onMouseDown={onClose}>
-      <div style={modalStyle} onMouseDown={(e) => e.stopPropagation()}>
+    <div style={overlayStyle} onClick={onClose}>
+      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={headerStyle}>
-          <h3 style={{ margin: 0, fontSize: '24px', color: '#0f172a' }}>{title}</h3>
-          <p style={{ margin: '8px 0 0', color: '#64748b' }}>
+          <h2 style={{ margin: '0 0 6px 0', fontSize: '20px', color: '#0f172a' }}>{title}</h2>
+          <p style={{ margin: 0, color: '#64748b' }}>
             Cadastre produtores, fornecedores e compradores no mesmo fluxo.
           </p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div style={bodyStyle}>
-            <div style={gridStyle}>
-              <label style={fieldStyle}>
-                <span>Tipo de Cadastro</span>
+            <div style={responsiveGrid}>
+              <div style={fieldStyle}>
+                <label>Tipo de Cadastro</label>
                 <select
                   name="tipo_cadastro"
                   value={clientData.tipo_cadastro}
@@ -270,76 +297,83 @@ const ClientForm = ({ onClose, onSave, clientToEdit, defaultType = 'FORNECEDOR' 
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
 
-              <label style={fieldStyle}>
-                <span>Nome Completo</span>
+              <div style={fieldStyle}>
+                <label>Nome Completo</label>
                 <input
                   name="nome"
                   value={clientData.nome}
                   onChange={handleChange}
+                  placeholder="Digite o nome completo"
                   style={inputStyle}
-                  autoFocus
                 />
-              </label>
+              </div>
 
-              <label style={fieldStyle}>
-                <span>CPF</span>
+              <div style={fieldStyle}>
+                <label>CPF</label>
                 <input
                   name="cpf"
                   value={clientData.cpf}
                   onChange={handleChange}
                   onBlur={handleBlur}
+                  placeholder="000.000.000-00"
                   style={inputStyle}
                 />
-              </label>
+              </div>
 
-              <label style={fieldStyle}>
-                <span>Telefone</span>
+              <div style={fieldStyle}>
+                <label>Telefone</label>
                 <input
                   name="telefone"
                   value={clientData.telefone}
                   onChange={handleChange}
                   onBlur={handleBlur}
+                  placeholder="(00) 00000-0000"
                   style={inputStyle}
                 />
-              </label>
+              </div>
 
-              <label style={{ ...fieldStyle, gridColumn: '1 / -1' }}>
-                <span>Endereço</span>
+              <div style={{ ...fieldStyle, ...(isMobile ? {} : { gridColumn: '2 / 4' }) }}>
+                <label>Endereço</label>
                 <input
                   name="endereco"
                   value={clientData.endereco}
                   onChange={handleChange}
+                  placeholder="Digite o endereço"
                   style={inputStyle}
                 />
-              </label>
+              </div>
 
-              <label style={fieldStyle}>
-                <span>Taxa de Juros (% a.m.)</span>
+              <div style={fieldStyle}>
+                <label>Taxa de Juros (% a.m.)</label>
                 <input
                   name="taxa_juros"
                   value={clientData.taxa_juros}
                   onChange={handleChange}
                   onBlur={handleBlur}
+                  placeholder="0"
                   style={inputStyle}
                 />
-              </label>
+              </div>
 
-              <label style={fieldStyle}>
-                <span>Perfil de Risco</span>
+              <div style={{ ...fieldStyle, ...(isMobile ? {} : { gridColumn: '2 / 3' }) }}>
+                <label>Perfil de Risco</label>
                 <select
                   name="perfil_risco"
                   value={clientData.perfil_risco}
                   onChange={handleChange}
                   style={inputStyle}
                 >
-                  <option value="Normal">Normal</option>
-                  <option value="Bom Pagador (Baixo)">Bom Pagador (Baixo)</option>
-                  <option value="Arriscado (Alto)">Arriscado (Alto)</option>
-                  <option value="VIP">VIP</option>
+                  {RISK_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
-              </label>
+              </div>
+
+              <div style={fullWidth} />
             </div>
           </div>
 
@@ -347,7 +381,6 @@ const ClientForm = ({ onClose, onSave, clientToEdit, defaultType = 'FORNECEDOR' 
             <button type="button" onClick={onClose} style={secondaryButtonStyle}>
               Cancelar
             </button>
-
             <button type="submit" style={primaryButtonStyle}>
               Salvar Dados
             </button>
