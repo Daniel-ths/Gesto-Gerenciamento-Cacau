@@ -1,39 +1,19 @@
 {
-  "name": "sistema-cacau",
+  "name": "sistema-cacau-backend",
   "version": "1.0.0",
-  "description": "Sistema de Gestão de Cacau",
-  "main": "main.js",
-  "author": "Rafael Milesky",
+  "description": "API web do sistema de gestão de cacau",
+  "private": true,
+  "main": "index.js",
   "scripts": {
-    "start": "node backend/index.js",
-    "electron": "electron .",
-    "dist": "electron-builder"
+    "dev": "node index.js",
+    "start": "node index.js",
+    "db:init": "node scripts/init-db.js",
+    "db:migrate:nedb": "node scripts/migrate-nedb-to-postgres.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "nedb-promises": "^6.2.3"
-  },
-  "devDependencies": {
-    "electron": "^33.2.1",
-    "electron-builder": "^24.13.3"
-  },
-  "build": {
-    "appId": "com.rafaelmilesky.cacau",
-    "win": {
-      "icon": "public/Novo Projeto.ico"
-    },
-
-    "productName": "RCM - Gestão",
-    "asar": false,
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "main.js",
-      "package.json",
-      "backend/**/*",
-      "frontend/dist/**/*"
-    ]
+    "pg": "^8.13.1"
   }
 }

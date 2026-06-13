@@ -1,18 +1,40 @@
-// frontend/src/api.js
-export const API_BASE_URL = 'http://localhost:3001';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
-// Criamos um facilitador simples para não depender de bibliotecas extras
+const defaultHeaders = {
+  'Content-Type': 'application/json',
+};
+
+const buildUrl = (url) => {
+  if (!url) return API_BASE_URL;
+  if (url.startsWith('http')) return url;
+  return `${API_BASE_URL}${url.startsWith('/') ? url : `/${url}`}`;
+};
+
 export const api = {
-    get: (url) => fetch(`${API_BASE_URL}${url}`),
-    post: (url, body) => fetch(`${API_BASE_URL}${url}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+  get: (url) =>
+    fetch(buildUrl(url), {
+      method: 'GET',
+      headers: defaultHeaders,
     }),
-    put: (url, body) => fetch(`${API_BASE_URL}${url}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+
+  post: (url, body) =>
+    fetch(buildUrl(url), {
+      method: 'POST',
+      headers: defaultHeaders,
+      body: JSON.stringify(body || {}),
     }),
-    delete: (url) => fetch(`${API_BASE_URL}${url}`, { method: 'DELETE' })
+
+  put: (url, body) =>
+    fetch(buildUrl(url), {
+      method: 'PUT',
+      headers: defaultHeaders,
+      body: JSON.stringify(body || {}),
+    }),
+
+  delete: (url) =>
+    fetch(buildUrl(url), {
+      method: 'DELETE',
+      headers: defaultHeaders,
+    }),
 };

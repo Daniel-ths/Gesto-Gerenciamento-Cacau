@@ -1,1 +1,2 @@
 {"nome":"5","cpf":"5","telefone":"5","endereco":"5","taxa_juros":0,"perfil_risco":"Normal","_id":"OenwdzdMhM7RHnRC","createdAt":{"$$date":1766992561989},"updatedAt":{"$$date":1766992561989}}
+{"$$indexCreated":{"fieldName":"nome","unique":false,"sparse":false}}

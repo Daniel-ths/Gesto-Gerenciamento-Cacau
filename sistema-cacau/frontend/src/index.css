@@ -1,12 +1,34 @@
-/* frontend/src/index.css */
-body {
-    margin: 0;
-    padding: 0;
-    font-family: Arial, sans-serif;
-    background-color: white; 
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
 #root {
-    /* É crucial que o elemento root tenha 100% da altura */
-    min-height: 100vh;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #f8fafc;
+  color: #0f172a;
+  overflow-x: hidden;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+table {
+  border-collapse: collapse;
 }

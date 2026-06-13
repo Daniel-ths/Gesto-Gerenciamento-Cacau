@@ -1,44 +1,38 @@
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
-const Datastore = require('nedb-promises');
-const path = require('path');
-const fs = require('fs');
+const dotenv = require('dotenv');
+const { pool, query } = require('./db');
+
+dotenv.config();
 
 const app = express();
+const router = express.Router();
 
-app.use(cors());
-app.use(express.json());
-
-// --- CONFIGURAÇÃO DO BANCO DE DADOS (NeDB) ---
-const userDataPath = process.env.USER_DATA_PATH || __dirname;
-const dbFolder = path.join(userDataPath, 'database');
+const PORT = Number(process.env.PORT || 3001);
 const TRASH_RETENTION_DAYS = 3;
 const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-if (!fs.existsSync(dbFolder)) {
-  try {
-    fs.mkdirSync(dbFolder, { recursive: true });
-  } catch (err) {
-    console.error('Erro crítico ao criar pasta do banco:', err);
-  }
-}
+const allowedOrigins = String(process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean);
 
-console.log('--> Banco de dados localizado em:', dbFolder);
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
 
-const db = {
-  clientes: Datastore.create({
-    filename: path.join(dbFolder, 'clientes.db'),
-    autoload: true,
-    timestampData: true,
-  }),
-  transacoes: Datastore.create({
-    filename: path.join(dbFolder, 'transacoes.db'),
-    autoload: true,
-    timestampData: true,
-  }),
-};
+      return callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
+    },
+  })
+);
 
-db.transacoes.ensureIndex({ fieldName: 'clienteId' });
+app.use(express.json({ limit: '10mb' }));
 
 const TIPOS_TRANSACAO = {
   ADIANTAMENTO: 'ADIANTAMENTO',
@@ -50,13 +44,25 @@ const TIPOS_TRANSACAO = {
 };
 
 const toNumber = (value) => {
-  const number = Number(value);
+  if (value === null || value === undefined || value === '') return 0;
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  let text = String(value).trim().replace(/\s+/g, '');
+
+  if (text.includes(',')) {
+    text = text.replace(/\./g, '').replace(',', '.');
+  }
+
+  const number = Number(text);
   return Number.isFinite(number) ? number : 0;
 };
 
-const round2 = (value) => {
-  return Math.round((toNumber(value) + Number.EPSILON) * 100) / 100;
-};
+const round2 = (value) => Math.round((toNumber(value) + Number.EPSILON) * 100) / 100;
+
+const round3 = (value) => Math.round((toNumber(value) + Number.EPSILON) * 1000) / 1000;
 
 const normalizeTipoCadastro = (value) => {
   const text = String(value || '').trim().toLowerCase();
@@ -75,12 +81,74 @@ const normalizeTipoCadastro = (value) => {
   return 'FORNECEDOR';
 };
 
-const isValidTransactionType = (tipo) => {
-  return Object.values(TIPOS_TRANSACAO).includes(tipo);
+const isValidTransactionType = (tipo) => Object.values(TIPOS_TRANSACAO).includes(tipo);
+
+const isClientDeleted = (client) => !!client?.deleted_at;
+
+const parseLocalDate = (value) => {
+  if (!value) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  }
+
+  if (value instanceof Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
+  }
+
+  const text = String(value);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (match) {
+    const [, year, month, day] = match;
+    return new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0, 0);
+  }
+
+  const parsed = new Date(text);
+
+  if (Number.isNaN(parsed.getTime())) {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  }
+
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
 };
 
-const isClientDeleted = (client) => {
-  return !!client?.deleted_at;
+const toDateOnly = (value) => {
+  const date = parseLocalDate(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getDaysInMonth = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate();
+
+const addMonthsClamped = (date, monthsToAdd) => {
+  const base = parseLocalDate(date);
+  const targetMonthIndex = base.getMonth() + monthsToAdd;
+  const target = new Date(base.getFullYear(), targetMonthIndex, 1, 12, 0, 0, 0);
+  const day = Math.min(base.getDate(), getDaysInMonth(target.getFullYear(), target.getMonth()));
+  target.setDate(day);
+  return target;
+};
+
+const getCompletedMonthlyCycles = (startDate, endDate = new Date()) => {
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+
+  if (end < start) return 0;
+
+  let months =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth());
+
+  const anniversary = addMonthsClamped(start, months);
+
+  if (anniversary > end) {
+    months -= 1;
+  }
+
+  return Math.max(0, months);
 };
 
 const calcularEstoqueCliente = (transacoes = []) => {
@@ -92,10 +160,10 @@ const calcularEstoqueCliente = (transacoes = []) => {
     if (t.tipo === TIPOS_TRANSACAO.VENDA_DEPOSITO) saidas += toNumber(t.peso_kg);
   }
 
-  return round2(entradas - saidas);
+  return round3(entradas - saidas);
 };
 
-const calcularSaldoCliente = (transacoes = []) => {
+const calcularSaldoSemJuros = (transacoes = []) => {
   let total = 0;
 
   for (const t of transacoes) {
@@ -105,11 +173,126 @@ const calcularSaldoCliente = (transacoes = []) => {
   return round2(total);
 };
 
+const calcularResumoFinanceiroCliente = (cliente = {}, transacoes = [], dataReferencia = new Date()) => {
+  const taxaMensal = Math.max(0, toNumber(cliente.taxa_juros));
+  const taxaDecimal = taxaMensal / 100;
+
+  const transacoesOrdenadas = [...transacoes].sort((a, b) => {
+    const dataA = parseLocalDate(a.data_transacao || a.created_at || a.createdAt);
+    const dataB = parseLocalDate(b.data_transacao || b.created_at || b.createdAt);
+
+    if (dataA.getTime() !== dataB.getTime()) return dataA - dataB;
+
+    return String(a.created_at || a.createdAt || a.id || '').localeCompare(
+      String(b.created_at || b.createdAt || b.id || '')
+    );
+  });
+
+  const dividas = [];
+  let creditoLivre = 0;
+
+  for (const transacao of transacoesOrdenadas) {
+    const dataOperacao = parseLocalDate(transacao.data_transacao || transacao.created_at || transacao.createdAt);
+    const valorFinanceiro = round2(toNumber(transacao.valor_total));
+
+    if (valorFinanceiro < 0) {
+      dividas.push({
+        origemId: transacao.id || transacao._id || null,
+        tipo: transacao.tipo,
+        data: dataOperacao,
+        baseRestante: Math.abs(valorFinanceiro),
+        valorOriginal: Math.abs(valorFinanceiro),
+      });
+
+      continue;
+    }
+
+    if (valorFinanceiro > 0) {
+      let valorParaAbater = valorFinanceiro;
+
+      for (const divida of dividas) {
+        if (valorParaAbater <= 0) break;
+        if (divida.baseRestante <= 0) continue;
+
+        const ciclos = getCompletedMonthlyCycles(divida.data, dataOperacao);
+        const multiplicador = taxaDecimal > 0 ? Math.pow(1 + taxaDecimal, ciclos) : 1;
+        const saldoAtualizadoNaData = round2(divida.baseRestante * multiplicador);
+        const abatimento = Math.min(valorParaAbater, saldoAtualizadoNaData);
+        const saldoAtualizadoAposAbatimento = round2(saldoAtualizadoNaData - abatimento);
+
+        divida.baseRestante = round2(saldoAtualizadoAposAbatimento / multiplicador);
+        valorParaAbater = round2(valorParaAbater - abatimento);
+      }
+
+      if (valorParaAbater > 0) {
+        creditoLivre = round2(creditoLivre + valorParaAbater);
+      }
+    }
+  }
+
+  const dividasAbertas = dividas
+    .filter((divida) => divida.baseRestante > 0.009)
+    .map((divida) => {
+      const ciclos = getCompletedMonthlyCycles(divida.data, dataReferencia);
+      const multiplicador = taxaDecimal > 0 ? Math.pow(1 + taxaDecimal, ciclos) : 1;
+      const valorAtualizado = round2(divida.baseRestante * multiplicador);
+      const juros = round2(valorAtualizado - divida.baseRestante);
+
+      return {
+        origemId: divida.origemId,
+        tipo: divida.tipo,
+        data: toDateOnly(divida.data),
+        meses_vencidos: ciclos,
+        valor_original: round2(divida.valorOriginal),
+        principal_restante: round2(divida.baseRestante),
+        juros_acumulados: juros,
+        valor_atualizado: valorAtualizado,
+      };
+    });
+
+  const totalDevedorAtualizado = round2(
+    dividasAbertas.reduce((total, divida) => total + divida.valor_atualizado, 0)
+  );
+
+  const jurosAcumulados = round2(
+    dividasAbertas.reduce((total, divida) => total + divida.juros_acumulados, 0)
+  );
+
+  const saldoSemJuros = calcularSaldoSemJuros(transacoes);
+  const saldoComJuros = round2(creditoLivre - totalDevedorAtualizado);
+
+  return {
+    saldo_sem_juros: saldoSemJuros,
+    saldo_total: saldoComJuros,
+    total_credito: creditoLivre,
+    total_devedor: totalDevedorAtualizado,
+    juros_acumulados: jurosAcumulados,
+    dividas_abertas: dividasAbertas,
+  };
+};
+
+const mapCliente = (row = {}) => ({
+  ...row,
+  _id: row.id,
+  taxa_juros: toNumber(row.taxa_juros),
+  tipo_cadastro: normalizeTipoCadastro(row.tipo_cadastro),
+});
+
+const mapTransacao = (row = {}) => ({
+  ...row,
+  _id: row.id,
+  clienteId: row.cliente_id,
+  peso_kg: toNumber(row.peso_kg),
+  preco_por_kg: toNumber(row.preco_por_kg),
+  valor_total: toNumber(row.valor_total),
+  valor_visual: toNumber(row.valor_visual),
+});
+
 const agruparTransacoesPorCliente = (transacoes = []) => {
   const map = new Map();
 
   for (const t of transacoes) {
-    const key = String(t.clienteId || '');
+    const key = String(t.clienteId || t.cliente_id || '');
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(t);
   }
@@ -118,187 +301,156 @@ const agruparTransacoesPorCliente = (transacoes = []) => {
 };
 
 const enrichClient = (cliente, transacoesDoCliente = []) => {
+  const resumoFinanceiro = calcularResumoFinanceiroCliente(cliente, transacoesDoCliente);
+
   return {
     ...cliente,
-    id: cliente._id,
+    id: cliente.id || cliente._id,
+    _id: cliente._id || cliente.id,
     tipo_cadastro: normalizeTipoCadastro(cliente.tipo_cadastro || cliente.categoria || cliente.tipo),
-    saldo_atual: calcularSaldoCliente(transacoesDoCliente),
+    saldo_atual: resumoFinanceiro.saldo_total,
+    saldo_sem_juros: resumoFinanceiro.saldo_sem_juros,
+    juros_acumulados: resumoFinanceiro.juros_acumulados,
+    total_devedor_atualizado: resumoFinanceiro.total_devedor,
     total_depositado: calcularEstoqueCliente(transacoesDoCliente),
   };
 };
 
 const purgeExpiredTrash = async () => {
-  try {
-    const now = new Date();
+  const expired = await query(
+    `
+      SELECT id
+      FROM clientes
+      WHERE deleted_at IS NOT NULL
+        AND purge_at IS NOT NULL
+        AND purge_at <= NOW()
+    `
+  );
 
-    const expiredClients = await db.clientes.find({
-      deleted_at: { $exists: true },
-      purge_at: { $lte: now },
-    });
+  if (expired.rowCount === 0) return 0;
 
-    if (!expiredClients.length) return 0;
+  const ids = expired.rows.map((row) => row.id);
 
-    for (const client of expiredClients) {
-      await Promise.all([
-        db.transacoes.remove({ clienteId: String(client._id) }, { multi: true }),
-        db.clientes.remove({ _id: client._id }, {}),
-      ]);
-    }
+  await query('DELETE FROM clientes WHERE id = ANY($1)', [ids]);
 
-    console.log(`[LIXEIRA] ${expiredClients.length} cliente(s) apagado(s) definitivamente.`);
-    return expiredClients.length;
-  } catch (err) {
-    console.error('Erro ao limpar lixeira expirada:', err);
-    return 0;
-  }
+  console.log(`[LIXEIRA] ${ids.length} cliente(s) apagado(s) definitivamente.`);
+  return ids.length;
 };
 
-// limpeza automática ao iniciar
-purgeExpiredTrash();
+const ensureDatabase = async () => {
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const schema = fs.readFileSync(schemaPath, 'utf8');
+  await pool.query(schema);
+};
 
-// limpeza periódica a cada 1 hora
-setInterval(() => {
-  purgeExpiredTrash();
-}, 60 * 60 * 1000);
-
-// --- ROTAS DA API ---
-app.get('/', (req, res) => {
+router.get('/', (req, res) => {
   res.json({
     status: 'online',
-    path: dbFolder,
-    type: 'NeDB',
+    database: 'PostgreSQL',
     transaction_types: Object.values(TIPOS_TRANSACAO),
     trash_retention_days: TRASH_RETENTION_DAYS,
   });
 });
 
-// LISTAR CLIENTES ATIVOS
-app.get('/clientes', async (req, res) => {
+router.get('/health', async (req, res) => {
   try {
-    await purgeExpiredTrash();
-
-    const [clientes, todasTransacoes] = await Promise.all([
-      db.clientes
-        .find({
-          $or: [{ deleted_at: { $exists: false } }, { deleted_at: null }],
-        })
-        .sort({ nome: 1 }),
-      db.transacoes.find(
-        {},
-        {
-          clienteId: 1,
-          valor_total: 1,
-          valor_visual: 1,
-          tipo: 1,
-          peso_kg: 1,
-        }
-      ),
-    ]);
-
-    const transacoesPorCliente = agruparTransacoesPorCliente(todasTransacoes);
-    const clientesFormatados = clientes.map((c) => {
-      const transacoesDoCliente = transacoesPorCliente.get(String(c._id)) || [];
-      return enrichClient(c, transacoesDoCliente);
-    });
-
-    res.json(clientesFormatados);
+    await query('SELECT 1');
+    res.json({ status: 'ok', database: 'connected' });
   } catch (err) {
-    console.error('Erro ao listar clientes:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ status: 'error', message: err.message });
   }
 });
 
-// LISTAR LIXEIRA
-app.get('/clientes/lixeira', async (req, res) => {
+router.get('/clientes', async (req, res) => {
   try {
     await purgeExpiredTrash();
 
-    const [clientesLixeira, todasTransacoes] = await Promise.all([
-      db.clientes.find({ deleted_at: { $exists: true } }).sort({ deleted_at: -1 }),
-      db.transacoes.find(
-        {},
-        {
-          clienteId: 1,
-          valor_total: 1,
-          valor_visual: 1,
-          tipo: 1,
-          peso_kg: 1,
-        }
-      ),
+    const [clientesResult, transacoesResult] = await Promise.all([
+      query('SELECT * FROM clientes WHERE deleted_at IS NULL ORDER BY nome ASC'),
+      query('SELECT * FROM transacoes ORDER BY data_transacao ASC, created_at ASC'),
     ]);
 
-    const transacoesPorCliente = agruparTransacoesPorCliente(todasTransacoes);
-    const data = clientesLixeira.map((c) => {
-      const transacoesDoCliente = transacoesPorCliente.get(String(c._id)) || [];
+    const clientes = clientesResult.rows.map(mapCliente);
+    const transacoes = transacoesResult.rows.map(mapTransacao);
+    const transacoesPorCliente = agruparTransacoesPorCliente(transacoes);
 
-      return {
-        ...enrichClient(c, transacoesDoCliente),
-        deleted_at: c.deleted_at,
-        purge_at: c.purge_at,
-      };
-    });
+    const data = clientes.map((cliente) =>
+      enrichClient(cliente, transacoesPorCliente.get(String(cliente.id)) || [])
+    );
+
+    res.json(data);
+  } catch (err) {
+    console.error('Erro ao listar clientes:', err);
+    res.status(500).json({ error: err.message, message: 'Erro ao listar clientes.' });
+  }
+});
+
+router.get('/clientes/lixeira', async (req, res) => {
+  try {
+    await purgeExpiredTrash();
+
+    const [clientesResult, transacoesResult] = await Promise.all([
+      query('SELECT * FROM clientes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'),
+      query('SELECT * FROM transacoes ORDER BY data_transacao ASC, created_at ASC'),
+    ]);
+
+    const clientes = clientesResult.rows.map(mapCliente);
+    const transacoes = transacoesResult.rows.map(mapTransacao);
+    const transacoesPorCliente = agruparTransacoesPorCliente(transacoes);
+
+    const data = clientes.map((cliente) =>
+      enrichClient(cliente, transacoesPorCliente.get(String(cliente.id)) || [])
+    );
 
     res.json(data);
   } catch (err) {
     console.error('Erro ao listar lixeira:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao listar lixeira.' });
   }
 });
 
-// CRIAR CLIENTE
-app.post('/clientes', async (req, res) => {
+router.post('/clientes', async (req, res) => {
   try {
-    const {
-      nome,
-      cpf,
-      telefone,
-      endereco,
-      taxa_juros,
-      perfil_risco,
-      tipo_cadastro,
-    } = req.body || {};
-
+    const { nome, cpf, telefone, endereco, taxa_juros, perfil_risco, tipo_cadastro } = req.body || {};
     const nomeLimpo = String(nome || '').trim();
 
     if (!nomeLimpo) {
       return res.status(400).json({ message: 'O nome é obrigatório.' });
     }
 
-    const newDoc = await db.clientes.insert({
-      nome: nomeLimpo,
-      cpf: cpf || '',
-      telefone: telefone || '',
-      endereco: endereco || '',
-      taxa_juros: toNumber(taxa_juros || 0),
-      perfil_risco: perfil_risco || 'Normal',
-      tipo_cadastro: normalizeTipoCadastro(tipo_cadastro),
-    });
+    const id = crypto.randomUUID();
 
-    res.json({
-      id: newDoc._id,
-      message: 'Cliente cadastrado com sucesso!',
-    });
+    await query(
+      `
+        INSERT INTO clientes (id, nome, cpf, telefone, endereco, taxa_juros, perfil_risco, tipo_cadastro)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `,
+      [
+        id,
+        nomeLimpo,
+        cpf || '',
+        telefone || '',
+        endereco || '',
+        toNumber(taxa_juros),
+        perfil_risco || 'Normal',
+        normalizeTipoCadastro(tipo_cadastro),
+      ]
+    );
+
+    res.json({ id, message: 'Cliente cadastrado com sucesso!' });
   } catch (err) {
     console.error('Erro ao criar cliente:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao criar cliente.' });
   }
 });
 
-// EDITAR CLIENTE
-app.put('/clientes/:id', async (req, res) => {
+router.put('/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      nome,
-      cpf,
-      telefone,
-      endereco,
-      taxa_juros,
-      perfil_risco,
-      tipo_cadastro,
-    } = req.body || {};
+    const { nome, cpf, telefone, endereco, taxa_juros, perfil_risco, tipo_cadastro } = req.body || {};
 
-    const cliente = await db.clientes.findOne({ _id: id });
+    const clienteResult = await query('SELECT * FROM clientes WHERE id = $1', [id]);
+    const cliente = clienteResult.rows[0];
 
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente não encontrado.' });
@@ -308,33 +460,49 @@ app.put('/clientes/:id', async (req, res) => {
       return res.status(400).json({ message: 'Cliente está na lixeira e não pode ser editado.' });
     }
 
-    await db.clientes.update(
-      { _id: id },
-      {
-        $set: {
-          nome: String(nome || '').trim(),
-          cpf: cpf || '',
-          telefone: telefone || '',
-          endereco: endereco || '',
-          taxa_juros: toNumber(taxa_juros || 0),
-          perfil_risco: perfil_risco || 'Normal',
-          tipo_cadastro: normalizeTipoCadastro(tipo_cadastro || cliente.tipo_cadastro),
-        },
-      }
+    const nomeLimpo = String(nome || '').trim();
+
+    if (!nomeLimpo) {
+      return res.status(400).json({ message: 'O nome é obrigatório.' });
+    }
+
+    await query(
+      `
+        UPDATE clientes
+        SET nome = $2,
+            cpf = $3,
+            telefone = $4,
+            endereco = $5,
+            taxa_juros = $6,
+            perfil_risco = $7,
+            tipo_cadastro = $8,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        id,
+        nomeLimpo,
+        cpf || '',
+        telefone || '',
+        endereco || '',
+        toNumber(taxa_juros),
+        perfil_risco || 'Normal',
+        normalizeTipoCadastro(tipo_cadastro || cliente.tipo_cadastro),
+      ]
     );
 
     res.json({ message: 'Cliente atualizado!' });
   } catch (err) {
     console.error('Erro ao editar cliente:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao editar cliente.' });
   }
 });
 
-// MOVER CLIENTE PARA LIXEIRA
-app.delete('/clientes/:id', async (req, res) => {
+router.delete('/clientes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const cliente = await db.clientes.findOne({ _id: id });
+    const clienteResult = await query('SELECT * FROM clientes WHERE id = $1', [id]);
+    const cliente = clienteResult.rows[0];
 
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente não encontrado.' });
@@ -347,32 +515,27 @@ app.delete('/clientes/:id', async (req, res) => {
     const deletedAt = new Date();
     const purgeAt = new Date(deletedAt.getTime() + TRASH_RETENTION_MS);
 
-    await db.clientes.update(
-      { _id: id },
-      {
-        $set: {
-          deleted_at: deletedAt,
-          purge_at: purgeAt,
-        },
-      }
+    await query(
+      `
+        UPDATE clientes
+        SET deleted_at = $2, purge_at = $3, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [id, deletedAt, purgeAt]
     );
 
-    res.json({
-      message: 'Cliente movido para a lixeira.',
-      deleted_at: deletedAt,
-      purge_at: purgeAt,
-    });
+    res.json({ message: 'Cliente movido para a lixeira.', deleted_at: deletedAt, purge_at: purgeAt });
   } catch (err) {
     console.error('Erro ao mover cliente para lixeira:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao mover cliente para lixeira.' });
   }
 });
 
-// RESTAURAR CLIENTE DA LIXEIRA
-app.post('/clientes/:id/restaurar', async (req, res) => {
+router.post('/clientes/:id/restaurar', async (req, res) => {
   try {
     const { id } = req.params;
-    const cliente = await db.clientes.findOne({ _id: id });
+    const clienteResult = await query('SELECT * FROM clientes WHERE id = $1', [id]);
+    const cliente = clienteResult.rows[0];
 
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente não encontrado.' });
@@ -382,28 +545,27 @@ app.post('/clientes/:id/restaurar', async (req, res) => {
       return res.status(400).json({ message: 'Cliente não está na lixeira.' });
     }
 
-    await db.clientes.update(
-      { _id: id },
-      {
-        $unset: {
-          deleted_at: true,
-          purge_at: true,
-        },
-      }
+    await query(
+      `
+        UPDATE clientes
+        SET deleted_at = NULL, purge_at = NULL, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [id]
     );
 
     res.json({ message: 'Cliente restaurado com sucesso.' });
   } catch (err) {
     console.error('Erro ao restaurar cliente:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao restaurar cliente.' });
   }
 });
 
-// EXCLUIR DEFINITIVAMENTE DA LIXEIRA
-app.delete('/clientes/:id/definitivo', async (req, res) => {
+router.delete('/clientes/:id/definitivo', async (req, res) => {
   try {
     const { id } = req.params;
-    const cliente = await db.clientes.findOne({ _id: id });
+    const clienteResult = await query('SELECT * FROM clientes WHERE id = $1', [id]);
+    const cliente = clienteResult.rows[0];
 
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente não encontrado.' });
@@ -413,66 +575,80 @@ app.delete('/clientes/:id/definitivo', async (req, res) => {
       return res.status(400).json({ message: 'Cliente não está na lixeira.' });
     }
 
-    await Promise.all([
-      db.transacoes.remove({ clienteId: id }, { multi: true }),
-      db.clientes.remove({ _id: id }, {}),
-    ]);
-
+    await query('DELETE FROM clientes WHERE id = $1', [id]);
     res.json({ message: 'Cliente apagado definitivamente.' });
   } catch (err) {
     console.error('Erro ao excluir definitivamente:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao excluir definitivamente.' });
   }
 });
 
-// CONTA CORRENTE
-app.get('/conta-corrente/:id', async (req, res) => {
+router.get('/conta-corrente/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { startDate, endDate } = req.query;
 
-    const [cliente, todasTransacoes] = await Promise.all([
-      db.clientes.findOne({ _id: id }),
-      db.transacoes.find({ clienteId: id }).sort({ data_transacao: -1 }),
+    const [clienteResult, transacoesResult] = await Promise.all([
+      query('SELECT * FROM clientes WHERE id = $1', [id]),
+      query(
+        `
+          SELECT *
+          FROM transacoes
+          WHERE cliente_id = $1
+          ORDER BY data_transacao DESC, created_at DESC
+        `,
+        [id]
+      ),
     ]);
 
+    const cliente = clienteResult.rows[0] ? mapCliente(clienteResult.rows[0]) : null;
+
     if (!cliente) {
-      return res.status(404).json({ message: 'Cliente não encontrado' });
+      return res.status(404).json({ message: 'Cliente não encontrado.' });
     }
+
+    const todasTransacoes = transacoesResult.rows.map(mapTransacao);
 
     let extrato = todasTransacoes;
 
     if (startDate || endDate) {
-      const start = startDate ? new Date(startDate) : null;
-      const end = endDate ? new Date(endDate) : null;
+      const start = startDate ? parseLocalDate(startDate) : null;
+      const end = endDate ? parseLocalDate(endDate) : null;
 
       if (end) end.setHours(23, 59, 59, 999);
 
-      extrato = todasTransacoes.filter((t) => {
-        const dataT = new Date(t.data_transacao || t.createdAt);
+      extrato = todasTransacoes.filter((transacao) => {
+        const dataT = parseLocalDate(transacao.data_transacao || transacao.created_at);
         if (start && dataT < start) return false;
         if (end && dataT > end) return false;
         return true;
       });
     }
 
-    const saldoTotal = calcularSaldoCliente(todasTransacoes);
+    const resumoFinanceiro = calcularResumoFinanceiroCliente(cliente, todasTransacoes);
     const totalDepositado = calcularEstoqueCliente(todasTransacoes);
 
     res.json({
       cliente: {
         ...cliente,
-        id: cliente._id,
+        id: cliente.id,
+        _id: cliente.id,
         tipo_cadastro: normalizeTipoCadastro(cliente.tipo_cadastro || cliente.categoria || cliente.tipo),
-        saldo: saldoTotal,
+        saldo: resumoFinanceiro.saldo_total,
+        saldo_sem_juros: resumoFinanceiro.saldo_sem_juros,
+        juros_acumulados: resumoFinanceiro.juros_acumulados,
+        total_devedor_atualizado: resumoFinanceiro.total_devedor,
+        total_credito: resumoFinanceiro.total_credito,
+        dividas_abertas: resumoFinanceiro.dividas_abertas,
         total_depositado: totalDepositado,
-        taxa_juros: cliente.taxa_juros || 0,
+        taxa_juros: toNumber(cliente.taxa_juros),
         deleted_at: cliente.deleted_at || null,
         purge_at: cliente.purge_at || null,
       },
       extrato: extrato.map((t) => ({
         ...t,
-        id: t._id,
+        id: t.id,
+        _id: t.id,
         is_deposito: t.tipo === TIPOS_TRANSACAO.DEPOSITO,
         is_venda_deposito: t.tipo === TIPOS_TRANSACAO.VENDA_DEPOSITO,
         is_saque: t.tipo === TIPOS_TRANSACAO.SAQUE,
@@ -480,50 +656,35 @@ app.get('/conta-corrente/:id', async (req, res) => {
       })),
     });
   } catch (err) {
-    console.error('[ERRO API]', err);
-    res.status(500).json({ error: err.message });
+    console.error('Erro ao buscar conta corrente:', err);
+    res.status(500).json({ error: err.message, message: 'Erro ao buscar conta corrente.' });
   }
 });
 
-// LISTAR TODAS AS TRANSAÇÕES
-app.get('/transacoes', async (req, res) => {
+router.get('/transacoes', async (req, res) => {
   try {
     await purgeExpiredTrash();
 
-    const clientes = await db.clientes.find({}, { _id: 1, deleted_at: 1 });
-
-    const deletedIds = new Set(
-      clientes.filter((c) => isClientDeleted(c)).map((c) => String(c._id))
+    const result = await query(
+      `
+        SELECT t.*
+        FROM transacoes t
+        INNER JOIN clientes c ON c.id = t.cliente_id
+        WHERE c.deleted_at IS NULL
+        ORDER BY t.data_transacao DESC, t.created_at DESC
+      `
     );
 
-    const transacoes = await db.transacoes.find({}).sort({ data_transacao: -1 });
-
-    res.json(
-      transacoes
-        .filter((t) => !deletedIds.has(String(t.clienteId)))
-        .map((t) => ({
-          ...t,
-          id: t._id,
-        }))
-    );
+    res.json(result.rows.map(mapTransacao).map((t) => ({ ...t, id: t.id, _id: t.id })));
   } catch (err) {
     console.error('Erro ao buscar transações:', err);
-    res.status(500).json({ message: 'Erro ao buscar transações.' });
+    res.status(500).json({ error: err.message, message: 'Erro ao buscar transações.' });
   }
 });
 
-// NOVA TRANSAÇÃO
-app.post('/transacoes', async (req, res) => {
+router.post('/transacoes', async (req, res) => {
   try {
-    const {
-      clienteId,
-      tipo,
-      peso_kg,
-      preco_por_kg,
-      valor_total,
-      observacao,
-      data_transacao,
-    } = req.body || {};
+    const { clienteId, tipo, peso_kg, preco_por_kg, valor_total, observacao, data_transacao } = req.body || {};
 
     if (!clienteId) {
       return res.status(400).json({ message: 'clienteId é obrigatório.' });
@@ -533,7 +694,8 @@ app.post('/transacoes', async (req, res) => {
       return res.status(400).json({ message: 'Tipo de transação inválido.' });
     }
 
-    const cliente = await db.clientes.findOne({ _id: String(clienteId) });
+    const clienteResult = await query('SELECT * FROM clientes WHERE id = $1', [String(clienteId)]);
+    const cliente = clienteResult.rows[0];
 
     if (!cliente) {
       return res.status(404).json({ message: 'Cliente não encontrado.' });
@@ -543,10 +705,9 @@ app.post('/transacoes', async (req, res) => {
       return res.status(400).json({ message: 'Cliente está na lixeira.' });
     }
 
-    const pesoNum = round2(toNumber(peso_kg));
+    const pesoNum = round3(toNumber(peso_kg));
     const precoNum = round2(toNumber(preco_por_kg));
-    const valorRaw = round2(toNumber(valor_total));
-
+    let valorRaw = round2(toNumber(valor_total));
     let valorFinalFinanceiro = 0;
 
     if (tipo === TIPOS_TRANSACAO.ADIANTAMENTO) {
@@ -560,25 +721,35 @@ app.post('/transacoes', async (req, res) => {
         return res.status(400).json({ message: 'Informe um peso válido para o depósito.' });
       }
 
+      valorRaw = 0;
       valorFinalFinanceiro = 0;
     } else if (tipo === TIPOS_TRANSACAO.VENDA_NOVO) {
-      if (pesoNum <= 0 || precoNum <= 0 || valorRaw <= 0) {
-        return res.status(400).json({ message: 'Informe peso, preço e valor válidos para a venda.' });
+      if (pesoNum <= 0 || precoNum <= 0) {
+        return res.status(400).json({ message: 'Informe peso e preço válidos para a venda.' });
+      }
+
+      valorRaw = valorRaw > 0 ? valorRaw : round2(pesoNum * precoNum);
+
+      if (valorRaw <= 0) {
+        return res.status(400).json({ message: 'Informe um valor válido para a venda.' });
       }
 
       valorFinalFinanceiro = Math.abs(valorRaw);
     } else if (tipo === TIPOS_TRANSACAO.VENDA_DEPOSITO) {
-      if (pesoNum <= 0 || precoNum <= 0 || valorRaw <= 0) {
-        return res
-          .status(400)
-          .json({ message: 'Informe peso, preço e valor válidos para a venda de depósito.' });
+      if (pesoNum <= 0 || precoNum <= 0) {
+        return res.status(400).json({ message: 'Informe peso e preço válidos para a venda de depósito.' });
       }
 
-      const transacoesCliente = await db.transacoes.find({
-        clienteId: String(clienteId),
-      });
+      valorRaw = valorRaw > 0 ? valorRaw : round2(pesoNum * precoNum);
 
-      const estoqueAtual = calcularEstoqueCliente(transacoesCliente);
+      if (valorRaw <= 0) {
+        return res.status(400).json({ message: 'Informe um valor válido para a venda de depósito.' });
+      }
+
+      const transacoesClienteResult = await query('SELECT * FROM transacoes WHERE cliente_id = $1', [
+        String(clienteId),
+      ]);
+      const estoqueAtual = calcularEstoqueCliente(transacoesClienteResult.rows.map(mapTransacao));
 
       if (pesoNum > estoqueAtual) {
         return res.status(400).json({
@@ -595,110 +766,152 @@ app.post('/transacoes', async (req, res) => {
       valorFinalFinanceiro = -Math.abs(valorRaw);
     } else if (tipo === TIPOS_TRANSACAO.DEPOSITO_DINHEIRO) {
       if (valorRaw <= 0) {
-        return res
-          .status(400)
-          .json({ message: 'Informe um valor válido para o depósito de dinheiro.' });
+        return res.status(400).json({ message: 'Informe um valor válido para o depósito de dinheiro.' });
       }
 
       valorFinalFinanceiro = Math.abs(valorRaw);
     }
 
-    const novaTransacao = {
-      clienteId: String(clienteId),
-      tipo,
-      peso_kg: pesoNum,
-      preco_por_kg: precoNum,
-      valor_total: valorFinalFinanceiro,
-      valor_visual: valorRaw,
-      observacao: observacao || '',
-      data_transacao: data_transacao ? new Date(data_transacao) : new Date(),
-    };
+    const id = crypto.randomUUID();
+    const dataOperacao = toDateOnly(data_transacao);
 
-    const doc = await db.transacoes.insert(novaTransacao);
+    await query(
+      `
+        INSERT INTO transacoes (
+          id, cliente_id, tipo, peso_kg, preco_por_kg, valor_total,
+          valor_visual, observacao, data_transacao
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      `,
+      [
+        id,
+        String(clienteId),
+        tipo,
+        pesoNum,
+        precoNum,
+        valorFinalFinanceiro,
+        valorRaw,
+        observacao || '',
+        dataOperacao,
+      ]
+    );
 
-    res.json({
-      id: doc._id,
-      message: 'Transação registrada!',
-    });
+    res.json({ id, message: 'Transação registrada!' });
   } catch (err) {
     console.error('Erro ao registrar transação:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao registrar transação.' });
   }
 });
 
-// EXCLUIR TRANSAÇÃO
-app.delete('/transacoes/:id', async (req, res) => {
+router.delete('/transacoes/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const transacao = await db.transacoes.findOne({ _id: id });
+    const transacaoResult = await query('SELECT * FROM transacoes WHERE id = $1', [id]);
 
-    if (!transacao) {
+    if (transacaoResult.rowCount === 0) {
       return res.status(404).json({ message: 'Transação não encontrada.' });
     }
 
-    await db.transacoes.remove({ _id: id }, {});
+    await query('DELETE FROM transacoes WHERE id = $1', [id]);
     res.json({ message: 'Transação excluída.' });
   } catch (err) {
     console.error('Erro ao excluir transação:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao excluir transação.' });
   }
 });
 
-// MÉTRICAS GERAIS
-app.get('/metrics/saldo-total', async (req, res) => {
+router.get('/metrics/saldo-total', async (req, res) => {
   try {
     await purgeExpiredTrash();
 
-    const [todasTransacoes, clientes] = await Promise.all([
-      db.transacoes.find({}),
-      db.clientes.find({
-        $or: [{ deleted_at: { $exists: false } }, { deleted_at: null }],
-      }),
+    const [clientesResult, transacoesResult] = await Promise.all([
+      query('SELECT * FROM clientes WHERE deleted_at IS NULL'),
+      query('SELECT * FROM transacoes ORDER BY data_transacao ASC, created_at ASC'),
     ]);
 
-    const transacoesPorCliente = agruparTransacoesPorCliente(todasTransacoes);
+    const clientes = clientesResult.rows.map(mapCliente);
+    const transacoes = transacoesResult.rows.map(mapTransacao);
+    const transacoesPorCliente = agruparTransacoesPorCliente(transacoes);
 
-    let total_credor = 0;
-    let total_devedor = 0;
-    let total_estoque = 0;
+    let totalCredor = 0;
+    let totalDevedor = 0;
+    let totalEstoque = 0;
+    let jurosAcumulados = 0;
 
-    for (const cli of clientes) {
-      const transacoesCli = transacoesPorCliente.get(String(cli._id)) || [];
-      const saldoCli = calcularSaldoCliente(transacoesCli);
-      const estoqueCli = calcularEstoqueCliente(transacoesCli);
+    for (const cliente of clientes) {
+      const transacoesCliente = transacoesPorCliente.get(String(cliente.id)) || [];
+      const resumo = calcularResumoFinanceiroCliente(cliente, transacoesCliente);
+      const saldoCliente = resumo.saldo_total;
 
-      if (saldoCli > 0) {
-        total_credor += saldoCli;
-      } else if (saldoCli < 0) {
-        total_devedor += Math.abs(saldoCli);
+      if (saldoCliente > 0) {
+        totalCredor += saldoCliente;
+      } else if (saldoCliente < 0) {
+        totalDevedor += Math.abs(saldoCliente);
       }
 
-      total_estoque += estoqueCli;
+      jurosAcumulados += resumo.juros_acumulados;
+      totalEstoque += calcularEstoqueCliente(transacoesCliente);
     }
 
     res.json({
-      total_credor: round2(total_credor),
-      total_devedor: round2(total_devedor),
-      total_estoque: round2(total_estoque),
+      total_credor: round2(totalCredor),
+      total_devedor: round2(totalDevedor),
+      total_estoque: round3(totalEstoque),
+      juros_acumulados: round2(jurosAcumulados),
     });
   } catch (err) {
     console.error('Erro ao calcular métricas:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message, message: 'Erro ao calcular métricas.' });
   }
 });
 
-// BACKUP
-app.get('/backup/clientes', (req, res) => {
-  const file = path.join(dbFolder, 'clientes.db');
+router.get('/backup/clientes', async (req, res) => {
+  try {
+    const [clientesResult, transacoesResult] = await Promise.all([
+      query('SELECT * FROM clientes ORDER BY nome ASC'),
+      query('SELECT * FROM transacoes ORDER BY data_transacao ASC, created_at ASC'),
+    ]);
 
-  if (fs.existsSync(file)) {
-    res.download(file);
-  } else {
-    res.status(404).send('Sem dados.');
+    const backup = {
+      generated_at: new Date().toISOString(),
+      database: 'PostgreSQL',
+      clientes: clientesResult.rows,
+      transacoes: transacoesResult.rows,
+    };
+
+    const date = new Date().toISOString().slice(0, 10);
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="backup-cacau-${date}.json"`);
+    res.json(backup);
+  } catch (err) {
+    console.error('Erro ao gerar backup:', err);
+    res.status(500).json({ error: err.message, message: 'Erro ao gerar backup.' });
   }
 });
 
-const PORT = 3001;
-app.listen(PORT, () => {
-  console.log(`Servidor NeDB rodando na porta ${PORT}`);
+app.use('/', router);
+app.use('/api', router);
+
+app.use((err, req, res, next) => {
+  console.error('Erro geral:', err);
+  res.status(500).json({ message: err.message || 'Erro interno do servidor.' });
+});
+
+const start = async () => {
+  await ensureDatabase();
+  await purgeExpiredTrash();
+
+  setInterval(() => {
+    purgeExpiredTrash().catch((err) => console.error('Erro ao limpar lixeira:', err));
+  }, 60 * 60 * 1000);
+
+  app.listen(PORT, () => {
+    console.log(`Servidor PostgreSQL rodando na porta ${PORT}`);
+  });
+};
+
+start().catch((err) => {
+  console.error('Erro crítico ao iniciar servidor:', err);
+  process.exit(1);
 });
