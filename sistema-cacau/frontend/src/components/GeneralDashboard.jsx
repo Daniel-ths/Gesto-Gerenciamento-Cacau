@@ -123,7 +123,7 @@ function GeneralDashboardComponent({ clientes = [], loading = false }) {
                     <div className={styles.infoArea}>
                         <span>Crédito dos Produtores</span>
                         <h3>{formatCurrency(resumo.totalPagar)}</h3>
-                        <small>Vendas já geraram crédito</small>
+                        <small>Vendas</small>
                     </div>
                 </div>
 
@@ -145,7 +145,7 @@ function GeneralDashboardComponent({ clientes = [], loading = false }) {
                     <div className={styles.infoArea}>
                         <span>Total de Produtores</span>
                         <h3>{resumo.totalClientes}</h3>
-                        <small>Base total cadastrada</small>
+                        <small>Base total</small>
                     </div>
                 </div>
             </div>

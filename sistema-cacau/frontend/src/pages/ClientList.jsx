@@ -101,7 +101,7 @@ const getScreenConfig = (screen) => {
     return {
       title: 'Compra e Venda',
       subtitle:
-        'Cadastre a galera para quem você vende e acompanhe essas contas separadamente dos produtores/fornecedores.',
+        'Cadastre o Cliente para quem você vende e acompanhe essas contas separadamente dos produtores/fornecedores.',
       emptyTitle: 'Nenhum comprador / indústria cadastrado',
       emptyText:
         'Assim que você cadastrar compradores ou indústrias, eles aparecerão aqui nessa área comercial.',
@@ -120,10 +120,10 @@ const getScreenConfig = (screen) => {
   return {
     title: 'Cadastro de Produtores',
     subtitle:
-      'Cadastre produtores e fornecedores que entregam cacau. Esta é a base de quem você compra.',
+      'Cadastre produtores e fornecedores que entregam cacau.',
     emptyTitle: 'Nenhum produtor cadastrado',
     emptyText:
-      'Assim que você cadastrar produtores e fornecedores, eles aparecerão aqui nesta tela.',
+      'Assim que você cadastrar produtores e fornecedores.',
     newLabel: 'Novo Cadastro',
     defaultType: 'FORNECEDOR',
     filterType: 'FORNECEDOR',
@@ -483,20 +483,6 @@ const ClientList = ({ screen = 'suppliers' }) => {
                 <Trash2 size={16} />
                 Lixeira ({visibleTrashClients.length})
               </button>
-
-              <button
-                onClick={handleBackupClick}
-                style={{
-                  ...headerButtonStyle,
-                  background: '#fff7ed',
-                  color: '#9a3412',
-                  border: '1px solid #fdba74',
-                }}
-                type="button"
-              >
-                <Download size={16} />
-                Backup Dados
-              </button>
             </div>
 
             <button
@@ -512,26 +498,6 @@ const ClientList = ({ screen = 'suppliers' }) => {
               {screenConfig.newLabel}
             </button>
           </div>
-
-          {showBackupWarning && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                background: '#fff7ed',
-                color: '#9a3412',
-                border: '1px solid #fdba74',
-                marginBottom: '18px',
-              }}
-            >
-              <AlertTriangle size={18} />
-              <span>Atenção: você não faz backup há mais de 7 dias.</span>
-            </div>
-          )}
-
           <div style={{ position: 'relative', maxWidth: '420px', marginBottom: '18px' }}>
             <Search
               size={16}

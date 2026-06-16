@@ -552,24 +552,6 @@ const GeneralReport = () => {
                         <strong>{formatCurrency(reportData.lucroBrutoEstimado)}</strong>
                     </div>
                 </div>
-
-                <div className={styles.section}>
-                    <h2>Alertas do Sistema</h2>
-                    <div className={styles.alertList}>
-                        {alerts.length > 0 ? (
-                            alerts.map((alert, index) => (
-                                <div key={index} className={styles.alertItem}>
-                                    {alert}
-                                </div>
-                            ))
-                        ) : (
-                            <div className={styles.alertItemOk}>
-                                Nenhum alerta importante encontrado.
-                            </div>
-                        )}
-                    </div>
-                </div>
-
                 <div className={styles.section}>
                     <h2>Resumo Consolidado</h2>
                     <div className={styles.summaryGrid}>
