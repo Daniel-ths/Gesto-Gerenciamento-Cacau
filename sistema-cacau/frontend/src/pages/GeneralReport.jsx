@@ -496,12 +496,6 @@ const GeneralReport = () => {
                         <span>Fornecedores</span>
                         <strong>{fornecedores.length}</strong>
                     </div>
-
-                    <div className={styles.kpiCard}>
-                        <span>Indústrias</span>
-                        <strong>{industrias.length}</strong>
-                    </div>
-
                     <div className={styles.kpiCard}>
                         <span>A Receber</span>
                         <strong>{formatCurrency(reportData.saldoClientesAReceber)}</strong>
@@ -531,25 +525,9 @@ const GeneralReport = () => {
                         <span>Total Vendido</span>
                         <strong>{formatKg(reportData.totalVendasKg)}</strong>
                     </div>
-
-                    <div className={styles.kpiCard}>
-                        <span>Preço Médio Pago</span>
-                        <strong>{formatCurrency(reportData.precoMedioPago)}</strong>
-                    </div>
-
                     <div className={styles.kpiCard}>
                         <span>Preço Médio de Venda</span>
                         <strong>{formatCurrency(reportData.precoMedioVenda)}</strong>
-                    </div>
-
-                    <div className={styles.kpiCard}>
-                        <span>Margem Média por Kg</span>
-                        <strong>{formatCurrency(reportData.margemMediaPorKg)}</strong>
-                    </div>
-
-                    <div className={styles.kpiCard}>
-                        <span>Resultado Bruto</span>
-                        <strong>{formatCurrency(reportData.lucroBrutoEstimado)}</strong>
                     </div>
                 </div>
                 <div className={styles.section}>
@@ -576,7 +554,7 @@ const GeneralReport = () => {
                             <p><strong>Quantidade:</strong> {reportData.byCategory.ADIANTAMENTOS.count}</p>
                             <p><strong>Valor:</strong> {formatCurrency(reportData.byCategory.ADIANTAMENTOS.total)}</p>
                             <p><strong>Peso:</strong> {formatKg(reportData.byCategory.ADIANTAMENTOS.peso)}</p>
-                            <p><strong>Observação:</strong> usado apenas como histórico, o painel agora prioriza saldo.</p>
+                            <p><strong>Observação:</strong> </p>
                         </div>
                     </div>
                 </div>
