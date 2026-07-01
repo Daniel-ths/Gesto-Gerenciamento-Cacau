@@ -1,211 +1,196 @@
-import React, { memo, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, Users, FileBarChart2, LayoutDashboard } from 'lucide-react';
-import SidebarMetrics from './SidebarMetrics';
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { FileBarChart2, Menu, ShoppingBag, Users, X } from "lucide-react";
+import SidebarMetrics from "./SidebarMetrics";
+import styles from "./Layout.module.css";
 
-const BASE_STYLES = {
-  container: {
-    display: 'flex',
-    minHeight: '100vh',
-    background: 'linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)',
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    color: '#0f172a',
-  },
-  sidebar: {
-    width: '270px',
-    background: 'linear-gradient(180deg, #1e293b 0%, #0f172a 100%)',
-    color: 'white',
-    display: 'flex',
-    flexDirection: 'column',
-    boxShadow: '6px 0 24px rgba(15, 23, 42, 0.10)',
-    zIndex: 10,
-    borderRight: '1px solid rgba(255,255,255,0.04)',
-    flexShrink: 0,
-  },
-  sidebarHeader: {
-    padding: '24px 22px 20px',
-    borderBottom: '1px solid rgba(255,255,255,0.08)',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '12px',
-  },
-  logoBox: {
-    background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-    padding: '8px',
-    borderRadius: '10px',
-    boxShadow: '0 8px 20px rgba(59, 130, 246, 0.25)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  titleWrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-  },
-  title: {
-    fontSize: '18px',
-    fontWeight: '800',
-    letterSpacing: '0.4px',
-    color: '#f8fafc',
-    margin: 0,
-    lineHeight: 1.1,
-  },
-  subtitle: {
-    fontSize: '12px',
-    color: '#94a3b8',
-    margin: 0,
-    lineHeight: 1.4,
-  },
-  nav: {
-    flex: 1,
-    padding: '18px 12px',
-    overflowY: 'auto',
-  },
-  sectionLabel: {
-    display: 'block',
-    color: '#64748b',
-    fontSize: '11px',
-    fontWeight: '800',
-    marginBottom: '12px',
-    paddingLeft: '10px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-  },
-  navGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  },
-  metricsContainer: {
-    padding: '14px 12px 18px 12px',
-    borderTop: '1px solid rgba(255,255,255,0.08)',
-    background: 'rgba(255,255,255,0.03)',
-    backdropFilter: 'blur(4px)',
-  },
-  main: {
-    flex: 1,
-    overflowY: 'auto',
-    padding: '32px',
-    position: 'relative',
-    minWidth: 0,
-  },
-  contentWrapper: {
-    maxWidth: '1280px',
-    margin: '0 auto',
-  },
-};
+const MOBILE_QUERY = "(max-width: 920px)";
 
-const getLinkStyle = (isActive) => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: '12px',
-  padding: '13px 14px',
-  borderRadius: '12px',
-  marginBottom: '2px',
-  textDecoration: 'none',
-  fontSize: '14px',
-  fontWeight: isActive ? '700' : '500',
-  color: isActive ? '#ffffff' : '#cbd5e1',
-  background: isActive
-    ? 'linear-gradient(90deg, rgba(59,130,246,0.22) 0%, rgba(59,130,246,0.10) 100%)'
-    : 'transparent',
-  border: isActive ? '1px solid rgba(59,130,246,0.35)' : '1px solid transparent',
-  boxShadow: isActive ? 'inset 0 0 0 1px rgba(255,255,255,0.03)' : 'none',
-  transition: 'all 0.18s ease',
-});
+const navItems = [
+  {
+    to: "/",
+    label: "Produtores",
+    desktopLabel: "Cadastro de Produtores",
+    icon: Users,
+    match: (pathname) =>
+      pathname === "/" ||
+      pathname === "/cadastros" ||
+      pathname.startsWith("/conta-corrente/"),
+  },
+  {
+    to: "/compra-venda",
+    label: "Operações",
+    desktopLabel: "Compra e Venda",
+    icon: ShoppingBag,
+    match: (pathname) => pathname === "/compra-venda",
+  },
+  {
+    to: "/relatorio-geral",
+    label: "Relatórios",
+    desktopLabel: "Relatório Geral",
+    icon: FileBarChart2,
+    match: (pathname) => pathname === "/relatorio-geral",
+  },
+];
 
-const getIconWrapStyle = (isActive) => ({
-  width: '32px',
-  height: '32px',
-  borderRadius: '9px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  background: isActive ? 'rgba(59,130,246,0.22)' : 'rgba(255,255,255,0.05)',
-  color: isActive ? '#ffffff' : '#94a3b8',
-  flexShrink: 0,
-  transition: 'all 0.18s ease',
-});
-
-const isPathActive = (pathname, to) => {
-  if (to === '/') {
-    return pathname === '/' || pathname === '/cadastros' || pathname.startsWith('/conta-corrente/');
+function isMobileViewport() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
   }
 
-  return pathname === to;
-};
+  return window.matchMedia(MOBILE_QUERY).matches;
+}
 
-const Layout = ({ children }) => {
-  const location = useLocation();
+function Layout({ children }) {
+  const { pathname } = useLocation();
+  const activePath = useMemo(() => pathname, [pathname]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(isMobileViewport);
 
-  const links = useMemo(
-    () => [
-      {
-        to: '/',
-        label: 'Cadastro de Produtores',
-        icon: Users,
-      },
-      {
-        to: '/compra-venda',
-        label: 'Compra e Venda',
-        icon: ShoppingBag,
-      },
-      {
-        to: '/relatorio-geral',
-        label: 'Relatório Geral',
-        icon: FileBarChart2,
-      },
-    ],
-    []
-  );
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const toggleMenu = useCallback(() => setMenuOpen((current) => !current), []);
+
+  useEffect(() => {
+    closeMenu();
+  }, [pathname, closeMenu]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return undefined;
+    }
+
+    const media = window.matchMedia(MOBILE_QUERY);
+    const syncViewport = () => {
+      setIsMobile(media.matches);
+      if (!media.matches) setMenuOpen(false);
+    };
+
+    syncViewport();
+    media.addEventListener?.("change", syncViewport);
+    return () => media.removeEventListener?.("change", syncViewport);
+  }, []);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") closeMenu();
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [menuOpen, closeMenu]);
+
+  const renderLinks = (variant) =>
+    navItems.map(({ to, label, desktopLabel, icon: Icon, match }) => {
+      const active = match(activePath);
+      const text = variant === "bottom" ? label : desktopLabel;
+
+      return (
+        <Link
+          key={`${variant}-${to}`}
+          to={to}
+          onClick={variant === "sidebar" ? closeMenu : undefined}
+          className={
+            variant === "bottom"
+              ? `${styles.bottomNavLink} ${active ? styles.bottomNavActive : ""}`
+              : `${styles.navLink} ${active ? styles.active : ""}`
+          }
+          aria-current={active ? "page" : undefined}
+        >
+          <span
+            className={variant === "bottom" ? styles.bottomNavIcon : styles.navIcon}
+            aria-hidden="true"
+          >
+            <Icon size={variant === "bottom" ? 20 : 18} strokeWidth={1.9} />
+          </span>
+          <span>{text}</span>
+        </Link>
+      );
+    });
 
   return (
-    <div style={BASE_STYLES.container}>
-      <aside style={BASE_STYLES.sidebar}>
-        <div style={BASE_STYLES.sidebarHeader}>
-          <div style={BASE_STYLES.logoBox}>
-            <LayoutDashboard size={20} />
-          </div>
+    <div className={styles.shell}>
+      <header className={styles.mobileHeader}>
+        <Link to="/" className={styles.mobileBrand} aria-label="RCM Controle Cacau - início">
+          <img src="/rcm-logo.jpeg" alt="RCM Cerealista Cearense" />
+        </Link>
 
-          <div style={BASE_STYLES.titleWrap}>
-            <h1 style={BASE_STYLES.title}>CONTROLE CACAU</h1>
-            <p style={BASE_STYLES.subtitle}>Gestão de produtores, compras, vendas e financeiro</p>
-          </div>
+        <button
+          type="button"
+          className={styles.menuButton}
+          onClick={toggleMenu}
+          aria-controls="rcm-main-menu"
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? "Fechar menu" : "Abrir menu"}
+        >
+          {menuOpen ? <X size={23} /> : <Menu size={23} />}
+        </button>
+      </header>
+
+      {menuOpen ? (
+        <button
+          type="button"
+          className={styles.mobileBackdrop}
+          onClick={closeMenu}
+          aria-label="Fechar menu"
+          tabIndex={-1}
+        />
+      ) : null}
+
+      <aside
+        id="rcm-main-menu"
+        className={`${styles.sidebar} ${menuOpen ? styles.sidebarOpen : ""}`}
+        aria-label="Menu principal"
+      >
+        <div className={styles.brand}>
+          <img className={styles.logo} src="/rcm-logo.jpeg" alt="RCM Cerealista Cearense" />
+          <button
+            type="button"
+            className={styles.closeSidebarButton}
+            onClick={closeMenu}
+            aria-label="Fechar menu"
+          >
+            <X size={21} />
+          </button>
         </div>
 
-        <nav style={BASE_STYLES.nav}>
-          <span style={BASE_STYLES.sectionLabel}>Principal</span>
+        <div className={styles.companyLine}>
+          <strong>CONTROLE CACAU</strong>
+          <span>Gestão de produtores, compras, vendas e financeiro</span>
+        </div>
 
-          <div style={BASE_STYLES.navGroup}>
-            {links.map((item) => {
-              const isActive = isPathActive(location.pathname, item.to);
-              const Icon = item.icon;
-
-              return (
-                <Link key={item.to} to={item.to} style={getLinkStyle(isActive)}>
-                  <span style={getIconWrapStyle(isActive)}>
-                    <Icon size={18} />
-                  </span>
-                  <span>{item.label}</span>
-                </Link>
-              );
-            })}
-          </div>
+        <nav className={styles.navigation} aria-label="Navegação principal">
+          <span className={styles.sectionTitle}>Principal</span>
+          <div className={styles.links}>{renderLinks("sidebar")}</div>
         </nav>
 
-        <div style={BASE_STYLES.metricsContainer}>
-          <SidebarMetrics />
+        <div className={styles.metricsArea}>
+          <span className={styles.sectionTitle}>Resumo da operação</span>
+          {(!isMobile || menuOpen) ? <SidebarMetrics /> : null}
+        </div>
+
+        <div className={styles.sidebarFooter}>
+          <span className={styles.footerMark}>RCM</span>
+          <span>Cerealista Cearense</span>
         </div>
       </aside>
 
-      <main style={BASE_STYLES.main}>
-        <div style={BASE_STYLES.contentWrapper}>{children}</div>
+      <main className={styles.main}>
+        <div className={styles.content}>{children}</div>
       </main>
+
+      <nav className={styles.bottomNav} aria-label="Atalhos principais">
+        {renderLinks("bottom")}
+      </nav>
     </div>
   );
-};
+}
 
 export default memo(Layout);
