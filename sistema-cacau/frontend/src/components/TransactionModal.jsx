@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, X } from 'lucide-react';
 import { api } from '../api';
-import { formatCurrency } from '../utils/formatters';
+import { formatCurrency, getLocalDateInputValue, parseDecimal } from '../utils/formatters';
 import styles from './TransactionModal.module.css';
 
 const TYPES = {
@@ -9,85 +9,88 @@ const TYPES = {
     title: 'Adiantamento',
     description: 'Valor antecipado ao fornecedor.',
     needsWeight: false,
-    needsPrice: false,
+    allowsPrice: false,
     needsManualValue: true,
   },
   DEPOSITO: {
     title: 'Depósito de Cacau',
     description: 'Entrada de cacau em estoque, sem gerar valor financeiro.',
     needsWeight: true,
-    needsPrice: false,
+    allowsPrice: false,
     needsManualValue: false,
   },
   VENDA_NOVO: {
     title: 'Compra de Cacau em Reais',
-    description: 'Compra direta de cacau, com peso e preço por kg.',
+    description: 'Compra direta. Informe o peso; preço e valor são opcionais.',
     needsWeight: true,
-    needsPrice: true,
+    allowsPrice: true,
     needsManualValue: false,
   },
   VENDA_DEPOSITO: {
     title: 'Compra de Cacau em Reais (do Depósito)',
-    description: 'Paga o cacau já depositado e baixa o estoque vinculado ao cadastro.',
+    description: 'Pode ser lançada mesmo sem depósito anterior. Preço e valor são opcionais.',
     needsWeight: true,
-    needsPrice: true,
+    allowsPrice: true,
     needsManualValue: false,
-  },
-  VENDA_INDUSTRIA: {
-    title: 'Venda de Cacau para Indústria',
-    description: 'Registra a venda para comprador/indústria e gera valor a receber.',
-    needsWeight: true,
-    needsPrice: true,
-    needsManualValue: false,
-    isNew: true,
   },
   SAQUE: {
     title: 'Saque',
     description: 'Retirada de valor da conta.',
     needsWeight: false,
-    needsPrice: false,
+    allowsPrice: false,
     needsManualValue: true,
   },
   DEPOSITO_DINHEIRO: {
     title: 'Depósito de Dinheiro',
     description: 'Entrada de pagamento ou crédito financeiro.',
     needsWeight: false,
-    needsPrice: false,
+    allowsPrice: false,
     needsManualValue: true,
   },
 };
 
-const safeNumber = (value) => {
-  const numeric = Number(String(value ?? '').replace(',', '.'));
-  return Number.isFinite(numeric) ? numeric : 0;
-};
+const getInitialForm = () => ({
+  tipo: 'ADIANTAMENTO',
+  peso_kg: '',
+  preco_por_kg: '',
+  valor_total: '',
+  observacao: '',
+  data_transacao: getLocalDateInputValue(),
+});
 
-const today = () => new Date().toISOString().slice(0, 10);
+const hasValue = (value) => String(value ?? '').trim() !== '';
 
-const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome, tipoCadastro }) => {
-  const [form, setForm] = useState({
-    tipo: 'ADIANTAMENTO',
-    peso_kg: '',
-    preco_kg: '',
-    valor: '',
-    observacao: '',
-    data_transacao: today(),
-  });
+const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome }) => {
+  const [form, setForm] = useState(getInitialForm);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   const selectedType = TYPES[form.tipo] || TYPES.ADIANTAMENTO;
-  const isIndustryAccount = String(tipoCadastro || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes('INDUSTRIA');
+  const isSale = form.tipo === 'VENDA_NOVO' || form.tipo === 'VENDA_DEPOSITO';
+
+  const weight = useMemo(() => parseDecimal(form.peso_kg), [form.peso_kg]);
+  const price = useMemo(() => parseDecimal(form.preco_por_kg), [form.preco_por_kg]);
+  const manualValue = useMemo(() => parseDecimal(form.valor_total), [form.valor_total]);
 
   const calculatedValue = useMemo(() => {
-    if (selectedType.needsPrice) return safeNumber(form.peso_kg) * safeNumber(form.preco_kg);
-    return safeNumber(form.valor);
-  }, [form.peso_kg, form.preco_kg, form.valor, selectedType.needsPrice]);
+    if (selectedType.needsManualValue) return manualValue;
+
+    // Para vendas, o valor informado manualmente prevalece. Caso ele não exista,
+    // o sistema calcula somente quando há peso e preço preenchidos.
+    if (isSale) {
+      if (hasValue(form.valor_total)) return manualValue;
+      if (weight > 0 && price > 0) return weight * price;
+      return 0;
+    }
+
+    return 0;
+  }, [form.valor_total, isSale, manualValue, price, selectedType.needsManualValue, weight]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape' && !submitting) onClose?.();
     };
+
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, submitting]);
@@ -95,16 +98,22 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome, tipoCada
   const updateField = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+    if (error) setError('');
   };
 
-  const selectType = (type) => {
+  const selectType = (tipo) => {
+    const definition = TYPES[tipo];
+
     setError('');
     setForm((current) => ({
       ...current,
-      tipo: type,
-      peso_kg: TYPES[type].needsWeight ? current.peso_kg : '',
-      preco_kg: TYPES[type].needsPrice ? current.preco_kg : '',
-      valor: TYPES[type].needsManualValue ? current.valor : '',
+      tipo,
+      peso_kg: definition.needsWeight ? current.peso_kg : '',
+      preco_por_kg: definition.allowsPrice ? current.preco_por_kg : '',
+      valor_total:
+        definition.needsManualValue || definition.allowsPrice
+          ? current.valor_total
+          : '',
     }));
   };
 
@@ -112,33 +121,34 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome, tipoCada
     event.preventDefault();
     setError('');
 
-    const weight = safeNumber(form.peso_kg);
-    const price = safeNumber(form.preco_kg);
-    const value = calculatedValue;
+    if (!form.data_transacao) {
+      setError('Informe a data da operação.');
+      return;
+    }
 
     if (selectedType.needsWeight && weight <= 0) {
       setError('Informe um peso maior que zero.');
       return;
     }
-    if (selectedType.needsPrice && price <= 0) {
-      setError('Informe o preço por kg.');
-      return;
-    }
-    if (selectedType.needsManualValue && value <= 0) {
+
+    if (selectedType.needsManualValue && calculatedValue <= 0) {
       setError('Informe um valor maior que zero.');
       return;
     }
 
     setSubmitting(true);
+
     try {
       const response = await api.post('/transacoes', {
         clienteId,
         tipo: form.tipo,
-        peso_kg: selectedType.needsWeight ? weight : 0,
-        preco_kg: selectedType.needsPrice ? price : 0,
-        valor: value,
-        observacao: form.observacao.trim(),
         data_transacao: form.data_transacao,
+        peso_kg: selectedType.needsWeight ? weight : 0,
+        // O preço pode ficar vazio/zero nas vendas, sem bloquear o lançamento.
+        preco_por_kg: selectedType.allowsPrice ? price : 0,
+        // O valor pode ser manual ou calculado; também pode ser zero nas vendas.
+        valor_total: calculatedValue,
+        observacao: form.observacao.trim(),
       });
 
       if (!response.ok) {
@@ -157,79 +167,142 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome, tipoCada
   };
 
   return (
-    <div className={styles.backdrop} role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget && !submitting) onClose?.();
-    }}>
-      <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="transaction-modal-title">
+    <div
+      className={styles.backdrop}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose?.();
+      }}
+    >
+      <section className={styles.modal} role="dialog" aria-modal="true" aria-label="Nova movimentação">
         <header className={styles.header}>
           <div>
             <p className={styles.eyebrow}>LANÇAMENTO</p>
-            <h2 id="transaction-modal-title">Nova movimentação</h2>
+            <h2>Nova movimentação</h2>
             <p>{clienteNome ? `Conta: ${clienteNome}` : 'Selecione os dados do lançamento.'}</p>
           </div>
-          <button className={styles.closeButton} type="button" onClick={onClose} disabled={submitting} aria-label="Fechar">
-            <X size={20} />
+
+          <button
+            type="button"
+            className={styles.closeButton}
+            onClick={onClose}
+            disabled={submitting}
+            aria-label="Fechar"
+          >
+            <X size={19} />
           </button>
         </header>
 
-        <form onSubmit={handleSubmit} className={styles.form}>
+        <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.typeGrid}>
-            {Object.entries(TYPES).map(([type, definition]) => (
-              <button
-                key={type}
-                type="button"
-                className={`${styles.typeButton} ${form.tipo === type ? styles.typeButtonSelected : ''}`}
-                onClick={() => selectType(type)}
-                disabled={submitting}
-              >
-                <span className={styles.typeTitle}>{definition.title}{definition.isNew ? <em>Novo</em> : null}</span>
-                <small>{definition.description}</small>
-              </button>
-            ))}
+            {Object.entries(TYPES).map(([tipo, definition]) => {
+              const selected = form.tipo === tipo;
+
+              return (
+                <button
+                  key={tipo}
+                  type="button"
+                  className={`${styles.typeButton} ${selected ? styles.typeButtonSelected : ''}`}
+                  onClick={() => selectType(tipo)}
+                  disabled={submitting}
+                >
+                  <span className={styles.typeTitle}>{definition.title}</span>
+                  <small>{definition.description}</small>
+                </button>
+              );
+            })}
           </div>
 
-          {form.tipo === 'VENDA_INDUSTRIA' && !isIndustryAccount ? (
-            <div className={styles.warning}>Use esta opção somente para contas de indústria/comprador.</div>
+          {form.tipo === 'VENDA_DEPOSITO' ? (
+            <div className={styles.warning}>
+              A venda de depósito não exige mais saldo prévio de depósito. O lançamento será salvo normalmente.
+            </div>
           ) : null}
 
           {error ? <div className={styles.error}>{error}</div> : null}
 
           <div className={styles.fieldGrid}>
             <label>
-              <span>Data</span>
-              <input type="date" name="data_transacao" value={form.data_transacao} onChange={updateField} disabled={submitting} />
+              Data
+              <input
+                type="date"
+                name="data_transacao"
+                value={form.data_transacao}
+                onChange={updateField}
+                disabled={submitting}
+              />
             </label>
+
             {selectedType.needsWeight ? (
               <label>
-                <span>Peso (Kg)</span>
-                <input type="number" name="peso_kg" min="0" step="0.01" value={form.peso_kg} onChange={updateField} placeholder="0,00" disabled={submitting} />
+                Peso (Kg)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name="peso_kg"
+                  value={form.peso_kg}
+                  onChange={updateField}
+                  disabled={submitting}
+                  placeholder="Ex.: 150,5"
+                />
               </label>
             ) : null}
-            {selectedType.needsPrice ? (
+
+            {selectedType.allowsPrice ? (
               <label>
-                <span>Preço por Kg (R$)</span>
-                <input type="number" name="preco_kg" min="0" step="0.01" value={form.preco_kg} onChange={updateField} placeholder="0,00" disabled={submitting} />
+                Preço por Kg (R$) — opcional
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name="preco_por_kg"
+                  value={form.preco_por_kg}
+                  onChange={updateField}
+                  disabled={submitting}
+                  placeholder="Pode deixar vazio"
+                />
               </label>
             ) : null}
-            {selectedType.needsManualValue ? (
+
+            {selectedType.needsManualValue || selectedType.allowsPrice ? (
               <label>
-                <span>Valor (R$)</span>
-                <input type="number" name="valor" min="0" step="0.01" value={form.valor} onChange={updateField} placeholder="0,00" disabled={submitting} />
+                {selectedType.needsManualValue ? 'Valor (R$)' : 'Valor total (R$) — opcional'}
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name="valor_total"
+                  value={form.valor_total}
+                  onChange={updateField}
+                  disabled={submitting}
+                  placeholder={selectedType.needsManualValue ? 'Ex.: 1.000,00' : 'Pode deixar vazio'}
+                />
               </label>
             ) : null}
+
             <label className={styles.totalField}>
-              <span>Valor do lançamento</span>
-              <output>{selectedType.needsWeight || selectedType.needsManualValue ? formatCurrency(calculatedValue) : 'Sem valor financeiro'}</output>
+              Valor do lançamento
+              <output>
+                {selectedType.needsWeight || selectedType.needsManualValue
+                  ? formatCurrency(calculatedValue)
+                  : 'Sem valor financeiro'}
+              </output>
             </label>
           </div>
 
           <label className={styles.fullField}>
-            <span>Observação</span>
-            <textarea name="observacao" rows="3" value={form.observacao} onChange={updateField} placeholder="Opcional" disabled={submitting} />
+            Observação
+            <textarea
+              name="observacao"
+              value={form.observacao}
+              onChange={updateField}
+              disabled={submitting}
+              placeholder="Opcional"
+            />
           </label>
 
           <footer className={styles.actions}>
-            <button type="button" className={styles.cancelButton} onClick={onClose} disabled={submitting}>Cancelar</button>
+            <button type="button" className={styles.cancelButton} onClick={onClose} disabled={submitting}>
+              Cancelar
+            </button>
             <button type="submit" className={styles.saveButton} disabled={submitting}>
               {submitting ? <Loader2 size={17} className={styles.spin} /> : <CheckCircle2 size={17} />}
               {submitting ? 'Salvando...' : 'Salvar lançamento'}
