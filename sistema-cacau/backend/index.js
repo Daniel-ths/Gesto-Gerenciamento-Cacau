@@ -14,22 +14,56 @@ const PORT = Number(process.env.PORT || 3001);
 const TRASH_RETENTION_DAYS = 3;
 const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
+/*
+  CORS
+  ----
+  O frontend possui um domínio fixo e também domínios de preview da Vercel.
+  Antes, o backend aceitava somente URLs exatamente iguais às definidas em
+  FRONTEND_URL. Isso bloqueava previews como:
+  gesto-gerenciamento-cacau-<id>-daniel-ths-projects.vercel.app
+
+  O padrão abaixo permite apenas os domínios deste projeto na Vercel, além
+  das URLs adicionais que forem informadas em FRONTEND_URL (separadas por vírgula).
+*/
 const allowedOrigins = String(process.env.FRONTEND_URL || '')
   .split(',')
-  .map((url) => url.trim())
+  .map((url) => url.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+const vercelProjectOriginPattern =
+  /^https:\/\/gesto-gerenciamento-cacau(?:-[a-z0-9-]+)?\.vercel\.app$/i;
 
-      return callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
-    },
-  }),
-);
+const normalizeOrigin = (origin) => String(origin || '').trim().replace(/\/$/, '');
+
+const isAllowedOrigin = (origin) => {
+  // Chamadas diretas (Render health check, Postman, servidor para servidor) não têm Origin.
+  if (!origin) return true;
+
+  const normalizedOrigin = normalizeOrigin(origin);
+  return (
+    allowedOrigins.includes(normalizedOrigin) ||
+    vercelProjectOriginPattern.test(normalizedOrigin)
+  );
+};
+
+const corsOptions = {
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) return callback(null, true);
+
+    // "false" evita que uma origem externa gere erro 500 no backend.
+    // Ela apenas não recebe os cabeçalhos CORS.
+    console.warn(`[CORS] Origem bloqueada: ${origin}`);
+    return callback(null, false);
+  },
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204,
+  maxAge: 86400,
+};
+
+app.use(cors(corsOptions));
+// Garante a resposta correta para os preflights enviados pelo navegador.
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
 const TIPOS_TRANSACAO = {
