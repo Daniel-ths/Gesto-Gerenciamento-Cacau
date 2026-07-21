@@ -56,6 +56,7 @@ const getInitialForm = () => ({
   valor_total: '',
   observacao: '',
   data_transacao: getLocalDateInputValue(),
+  baixar_deposito: true,
 });
 
 const hasValue = (value) => String(value ?? '').trim() !== '';
@@ -101,21 +102,23 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome }) => {
     if (error) setError('');
   };
 
-  const selectType = (tipo) => {
-    const definition = TYPES[tipo];
+const selectType = (tipo) => {
+  const definition = TYPES[tipo];
 
-    setError('');
-    setForm((current) => ({
-      ...current,
-      tipo,
-      peso_kg: definition.needsWeight ? current.peso_kg : '',
-      preco_por_kg: definition.allowsPrice ? current.preco_por_kg : '',
-      valor_total:
-        definition.needsManualValue || definition.allowsPrice
-          ? current.valor_total
-          : '',
-    }));
-  };
+  setError('');
+
+  setForm((current) => ({
+    ...current,
+    tipo,
+    peso_kg: definition.needsWeight ? current.peso_kg : '',
+    preco_por_kg: definition.allowsPrice ? current.preco_por_kg : '',
+    valor_total:
+      definition.needsManualValue || definition.allowsPrice
+        ? current.valor_total
+        : '',
+    baixar_deposito: true,
+  }));
+};
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -139,17 +142,16 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome }) => {
     setSubmitting(true);
 
     try {
-      const response = await api.post('/transacoes', {
-        clienteId,
-        tipo: form.tipo,
-        data_transacao: form.data_transacao,
-        peso_kg: selectedType.needsWeight ? weight : 0,
-        // O preço pode ficar vazio/zero nas vendas, sem bloquear o lançamento.
-        preco_por_kg: selectedType.allowsPrice ? price : 0,
-        // O valor pode ser manual ou calculado; também pode ser zero nas vendas.
-        valor_total: calculatedValue,
-        observacao: form.observacao.trim(),
-      });
+const response = await api.post('/transacoes', {
+  clienteId,
+  tipo: form.tipo,
+  data_transacao: form.data_transacao,
+  peso_kg: selectedType.needsWeight ? weight : 0,
+  preco_por_kg: selectedType.allowsPrice ? price : 0,
+  valor_total: calculatedValue,
+  observacao: form.observacao.trim(),
+  baixar_deposito: form.baixar_deposito,
+});
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -218,6 +220,30 @@ const TransactionModal = ({ onClose, onSuccess, clienteId, clienteNome }) => {
               A venda de depósito não exige mais saldo prévio de depósito. O lançamento será salvo normalmente.
             </div>
           ) : null}
+
+          {form.tipo === 'VENDA_DEPOSITO' && (
+  <div className={styles.checkboxContainer}>
+    <label className={styles.checkboxLabel}>
+      <input
+        type="checkbox"
+        checked={form.baixar_deposito}
+        onChange={(event) =>
+          setForm((current) => ({
+            ...current,
+            baixar_deposito: event.target.checked,
+          }))
+        }
+        disabled={submitting}
+      />
+
+      Dar baixa automaticamente do depósito do cliente
+    </label>
+
+    <small>
+      Desmarque esta opção caso deseje registrar a compra sem retirar o cacau do depósito do cliente.
+    </small>
+  </div>
+)}
 
           {error ? <div className={styles.error}>{error}</div> : null}
 

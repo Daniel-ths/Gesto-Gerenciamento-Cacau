@@ -90,3 +90,61 @@
   .typeButton small { font-size: 12px; }
   .actions { grid-template-columns: 1fr; }
 }
+
+.checkboxContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  padding: 14px;
+
+  border: 1px solid var(--line, #e3d7c8);
+  border-radius: 10px;
+
+  background: #fffaf3;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  cursor: pointer;
+
+  color: var(--cocoa, #271a0e);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.checkboxLabel input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+
+  cursor: pointer;
+
+  accent-color: var(--bronze-deep, #8e6234);
+}
+
+.checkboxContainer small {
+  margin-left: 28px;
+
+  color: var(--text-muted, #756554);
+
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 650px) {
+  .checkboxContainer {
+    padding: 12px;
+  }
+
+  .checkboxLabel {
+    align-items: flex-start;
+    font-size: 13px;
+  }
+
+  .checkboxContainer small {
+    margin-left: 0;
+  }
+}

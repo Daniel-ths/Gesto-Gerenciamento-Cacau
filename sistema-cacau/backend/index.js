@@ -179,8 +179,12 @@ const calcularEstoqueCliente = (transacoes = []) => {
   for (const transacao of sortTransactionsChronologically(transacoes)) {
     const peso = Math.max(0, toNumber(transacao.peso_kg));
     if (transacao.tipo === TIPOS_TRANSACAO.DEPOSITO) estoque += peso;
-    if (transacao.tipo === TIPOS_TRANSACAO.VENDA_DEPOSITO) estoque = Math.max(0, estoque - peso);
-  }
+if (
+    transacao.tipo === TIPOS_TRANSACAO.VENDA_DEPOSITO &&
+    transacao.baixar_deposito !== false
+){
+    estoque = Math.max(0, estoque - peso);
+}
 
   return round3(estoque);
 };
@@ -281,6 +285,7 @@ const mapTransacao = (row = {}) => ({
   preco_por_kg: toNumber(row.preco_por_kg),
   valor_total: toNumber(row.valor_total),
   valor_visual: toNumber(row.valor_visual),
+  baixar_deposito: row.baixar_deposito !== false,
 });
 
 const agruparTransacoesPorCliente = (transacoes = []) => {
@@ -597,7 +602,7 @@ router.post('/transacoes', async (req, res) => {
   try {
     const body = req.body || {};
     const clienteId = body.clienteId;
-    const tipo = body.tipo;
+    const baixarDeposito = body.baixar_deposito !== false;
 
     // Compatibilidade com versões anteriores do frontend que enviavam preco_kg e valor.
     const pesoNum = round3(toNumber(body.peso_kg));
@@ -644,43 +649,48 @@ router.post('/transacoes', async (req, res) => {
       valorFinalFinanceiro = Math.abs(valorRaw);
     }
 
-    const id = crypto.randomUUID();
-    await query(
-      `INSERT INTO transacoes
-        (id, cliente_id, tipo, peso_kg, preco_por_kg, valor_total, valor_visual, observacao, data_transacao)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [
-        id,
-        String(clienteId),
-        tipo,
-        pesoNum,
-        precoNum,
-        valorFinalFinanceiro,
-        valorRaw,
-        body.observacao || '',
-        toDateOnly(body.data_transacao),
-      ],
-    );
+const id = crypto.randomUUID();
+await query(
+  `INSERT INTO transacoes
+  (
+    id,
+    cliente_id,
+    tipo,
+    peso_kg,
+    preco_por_kg,
+    valor_total,
+    valor_visual,
+    observacao,
+    data_transacao,
+    baixar_deposito
+  )
+  VALUES
+  (
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10
+  )`,
+  [
+    id,
+    String(clienteId),
+    tipo,
+    pesoNum,
+    precoNum,
+    valorFinalFinanceiro,
+    valorRaw,
+    body.observacao || '',
+    toDateOnly(body.data_transacao),
+    baixarDeposito,
+  ],
+);
 
-    res.json({ id, message: 'Transação registrada!' });
-  } catch (error) {
-    console.error('Erro ao registrar transação:', error);
-    res.status(500).json({ error: error.message, message: 'Erro ao registrar transação.' });
-  }
-});
+res.json({ id, message: 'Transação registrada!' });
 
-router.delete('/transacoes/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await query('SELECT * FROM transacoes WHERE id = $1', [id]);
-    if (result.rowCount === 0) return res.status(404).json({ message: 'Transação não encontrada.' });
-
-    await query('DELETE FROM transacoes WHERE id = $1', [id]);
-    res.json({ message: 'Transação excluída.' });
-  } catch (error) {
-    console.error('Erro ao excluir transação:', error);
-    res.status(500).json({ error: error.message, message: 'Erro ao excluir transação.' });
-  }
+} catch (error) {
+  console.error('Erro ao registrar transação:', error);
+  res.status(500).json({
+    error: error.message,
+    message: 'Erro ao registrar transação.',
+  });
+}
 });
 
 router.get('/metrics/saldo-total', async (req, res) => {
@@ -768,4 +778,4 @@ const start = async () => {
 start().catch((error) => {
   console.error('Erro crítico ao iniciar servidor:', error);
   process.exit(1);
-});
+})}
